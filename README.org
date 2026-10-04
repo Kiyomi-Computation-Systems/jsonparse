@@ -1,0 +1,13 @@
+* jsonparse
+
+A fast JSON parser for R6RS Scheme implementations based on [[https://github.com/Kiyomi-Computation-Systems/byte-machine][byte-machine]]. This projects focuses on performance and correctness.
+
+#+begin_quote
+✨ *AI Disclosure:* LLMs are used extensively in the planning and development of this project.
+#+end_quote
+
+** License
+
+© [[https://kiyomicomputation.systems/][Kiyomi Computation Systems LLC]]. Licensed under BSD 3-Clause — see
+[[file:LICENSE][LICENSE]].
+

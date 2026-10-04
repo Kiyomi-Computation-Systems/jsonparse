@@ -1,0 +1,8 @@
+(import (rnrs) (byte-machine compile) (bmjson grammar))
+(define c (compile-machine json-machine '()))
+(unless (compilation-ok? c)
+  (for-each (lambda (d) (write d) (newline)) (compilation-diagnostics c))
+  (exit 1))
+(when (file-exists? "out/json-parser.sls") (delete-file "out/json-parser.sls"))
+(call-with-port (open-file-output-port "out/json-parser.sls")
+  (lambda (p) (write (emit-machine c 'json-parser p)) (newline)))

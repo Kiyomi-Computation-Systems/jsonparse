@@ -1,0 +1,10 @@
+(import (rnrs) (only (chezscheme) iota format))
+(define (join parts sep)
+  (if (null? parts) "" (fold-left (lambda (acc p) (string-append acc sep p)) (car parts) (cdr parts))))
+(define (record i)
+  (format "{\"id\":~a,\"name\":\"user-~a\",\"email\":\"u~a@example.com\",\"score\":~a.5,\"active\":~a,\"tags\":[\"a\",\"b\",\"c\"],\"addr\":{\"city\":\"Tokyo\",\"zip\":\"100-~a\"},\"note\":null}"
+          i i i (* i 3) (if (even? i) "true" "false") i))
+(define (out f s) (call-with-port (open-file-output-port f (file-options no-fail)) (lambda (p) (put-bytevector p (string->utf8 s)))))
+(out "ints-40k.json" (string-append "[" (join (map number->string (iota 40000)) ",") "]"))
+(out "records-2k.json" (string-append "[" (join (map record (iota 2000)) ",") "]"))
+(out "escaped-string.json" (string-append "[\"" (apply string-append (map (lambda (i) "lorem ipsum dolor sit amet, \\n\\u00e9\\ud83d\\ude00 ") (iota 5000))) "\"]"))
