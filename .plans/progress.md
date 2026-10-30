@@ -34,7 +34,8 @@ newest first.
 - the import check (ADR-0003);
 - an SRFI-64 harness;
 - the test-only property library, modelled on circuit's (ADR-0012);
-- CI on Linux amd64 (ADR-0009).
+- CI on Linux amd64 and arm64, each job checking its architecture
+  (ADR-0009).
 
 **Milestone 1, in order:**
 

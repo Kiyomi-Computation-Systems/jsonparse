@@ -430,7 +430,8 @@ The owner also decided:
   (ADR-0002);
 - the libraries are portable R6RS, and the tooling is Chez (ADR-0003);
 - the development environment is a pinned Guix container (ADR-0008);
-- CI runs on Linux amd64, with arm64 later (ADR-0009).
+- CI runs on Linux amd64 and arm64, now that the repository is public
+  (ADR-0009);
 - correctness is tested against licensed, vendored corpora and generated
   cases (ADR-0012);
 - performance is compared with yajl and the Scheme peers, on public files

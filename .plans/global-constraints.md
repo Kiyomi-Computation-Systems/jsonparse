@@ -9,8 +9,10 @@ record disagree, the record wins and this file gets fixed.
 - **Platforms:** Linux and macOS, on amd64 and arm64. No Windows code paths or
   CI (AGENTS.md).
 - **Chez:** 10.4.1 or later (ADR-0008).
-- **CI:** Linux amd64 only for now, and never a macOS runner. arm64 is covered
-  by `make test` on the owner's M1 laptop (ADR-0009, AGENTS.md).
+- **CI:** Linux amd64 and arm64 (`ubuntu-24.04` and `ubuntu-24.04-arm`).
+  Each job checks `uname -m` and Chez's machine type. Never a macOS runner:
+  macOS is covered by `make test` on the owner's M1 laptop (ADR-0009,
+  AGENTS.md).
 
 ## Portability
 
