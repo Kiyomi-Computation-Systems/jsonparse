@@ -69,10 +69,13 @@ newest first.
    - It reports bad records, and skips them when asked.
    - Its chunking tests split before, on and after every separator.
    - It measures the separator scan.
-   - **Decide whether `values` needs whitespace between values.** The
-     machine's `mode` bit needs none: it accepts `[]{}` and `"a""b"`, and
-     reads `1-2` as 1 and −2. ADR-0014 says "whitespace-separated". Decide
-     too what an empty stream is; the machine rejects it.
+   - **`values` follows ADR-0014's revision.** Objects, arrays and strings
+     need no separator after them. A top-level number or literal needs
+     whitespace or the end of the input after it, so `1-2` and `truefalse`
+     are errors. An empty stream holds no values.
+     - That is a grammar change under the `mode` bit.
+     - The `machine` suite's mode cases, which pin today's behaviour, change
+       with it.
 
 ## Close-outs
 

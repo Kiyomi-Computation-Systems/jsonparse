@@ -1,9 +1,14 @@
 # ADR-0014: Streams of values are read and written in M1
 
-- **Status:** Accepted
+- **Status:** Accepted, revised the same day
 - **Date:** 2026-10-30
 - **Scope:** reading and writing many JSON values from one stream
 - **Related:** ADR-0005, ADR-0010, ADR-0011, ADR-0012; plan M1 and M4
+
+> **Revision (2026-10-30, after slice 1).** Slice 1 found that the
+> multiple-values bit needs no separator at all: it accepts `[]{}` and
+> `"a""b"`, and reads `1-2` as 1 and −2. The owner chose what `values`
+> accepts; Decision 2 now says it.
 
 ## Context
 
@@ -50,9 +55,19 @@ RS outside a value always ends a record.
    - **`seq`** (RFC 7464):
      - Records start at RS, and repeated RS bytes are ignored.
      - Bytes before the first RS form a bad record.
-   - **`values`:** values separated by whitespace, with the machine's
-     multiple-values bit. A stream with no framing can't be resynchronized,
-     so the first error ends it.
+   - **`values`:** a run of values, with the machine's multiple-values bit.
+     A stream with no framing can't be resynchronized, so the first error
+     ends it.
+     - **An object, array or string needs no separator after it:** its
+       closing byte already ends it, so `{}{}`, `[][]` and `"a""b"` are
+       three streams of two values.
+     - **A top-level number or literal must be followed by whitespace or by
+       the end of the input.** `1 -2` is two values, and `1-2` and
+       `truefalse` are errors. A missing separator after a number is almost
+       always a corrupted stream, and reading it as two values would hide
+       that.
+     - **An empty or whitespace-only stream holds no values.** It is not an
+       error: an empty log is normal.
 3. **Bad records:**
    - In `lines`, a bad record is an error by default. It carries:
      - the error's code;
@@ -90,6 +105,11 @@ RS outside a value always ends a record.
 
 - **M1 gains a seventh slice,** `(jsonparse sequence)`, with its easy-layer
   procedures. The multiple-values bit moves from M4's option list into M1.
+- **Slice 7 changes the grammar.** Under the multiple-values bit, a
+  top-level number or literal must then be followed by whitespace or the end
+  of the input. Slice 1's `machine` suite pins today's behaviour, so those
+  cases change with it. Slice 7 also makes an empty stream give no values,
+  in the grammar or in `(jsonparse sequence)`.
 - **The scan for separators costs a loop over every byte in Scheme.** The
   slice measures it. If the cost matters, the grammar can learn the separator
   through a `mode` bit instead.
