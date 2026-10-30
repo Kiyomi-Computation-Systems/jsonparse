@@ -25,7 +25,7 @@
   `scripts/guix-env sh -c 'make a && make b'`: each call takes a second or
   more to start.
 * Edit, commit and push on the host. The container has no git identity,
-  agents or tokens, and no network but loopback (ADR-0006).
+  agents or tokens, and no network but loopback (ADR-0008).
 * Verify it with `make check-guix`, run on the host.
 * The container exports `CHEZ` (the real `scheme` binary)
 
