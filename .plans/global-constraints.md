@@ -38,9 +38,9 @@ record disagree, the record wins and this file gets fixed.
 ## Layers
 
 - **The low layer** is `(jsonparse parser)`, `(jsonparse string)`,
-  `(jsonparse tree)`, `(jsonparse writer)` and their supporting libraries. It
-  takes bytes, counts offsets in bytes, and never raises on bad input
-  (ADR-0010).
+  `(jsonparse tree)`, `(jsonparse writer)`, `(jsonparse sequence)` and their
+  supporting libraries. It takes bytes, counts offsets in bytes, and never
+  raises on bad input (ADR-0010, ADR-0014).
 - **`(jsonparse easy)` composes low-layer exports only.** It raises
   `&json-error`, whose offset counts characters for a string and bytes
   otherwise (ADR-0010).
@@ -80,6 +80,17 @@ record disagree, the record wins and this file gets fixed.
 - **The writer refuses what JSON can't express** (ADR-0007). It strips the
   `|` mantissa width from flonums, and refuses exact fractions with no finite
   decimal (ADR-0011).
+
+## Streams of values
+
+- **Records are framed by byte:** `\n` for `lines` and RS for `seq`. A
+  record split across chunks is never copied into one buffer (ADR-0014).
+- **`lines` by default:** a bad record or a blank line is an error, with a
+  record number and a byte offset (ADR-0014).
+- **A skipped record is always reported** to the caller's procedure. `seq`
+  always skips bad records, and drops a possibly cut-off top-level number or
+  literal as `truncated` (ADR-0014).
+- **Records written as `lines` are compact** (ADR-0014).
 
 ## Tests and benchmarks
 

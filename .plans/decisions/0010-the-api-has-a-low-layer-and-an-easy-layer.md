@@ -4,7 +4,7 @@
 - **Date:** 2026-10-30
 - **Scope:** jsonparse's libraries and what each one exports
 - **Related:** plan §7 questions 6 and 8; ADR-0003, ADR-0006, ADR-0007,
-  ADR-0011; uriparse ADR-0040, which this follows
+  ADR-0011, ADR-0014; uriparse ADR-0040, which this follows
 
 ## Context
 
@@ -50,6 +50,8 @@ Either way the text is wrong and no error is raised.
      options in ADR-0006 and ADR-0011.
    - **`(jsonparse writer)`** writes values as UTF-8 to a binary port. It
      refuses what JSON can't express (ADR-0007).
+   - **`(jsonparse sequence)`** reads streams of many values: JSON Lines,
+     RFC 7464 and whitespace-separated values (ADR-0014).
    - Supporting libraries, such as the options record and `&json-error`, also
      sit in this layer.
 2. **The easy layer is `(jsonparse easy)`.** Every export composes low-layer

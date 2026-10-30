@@ -2,7 +2,7 @@
 
 Date: 2026-10-03
 Status: accepted with revisions. Milestone 0 (prototype and measurement) is
-done. On 2026-10-30 the owner answered §7, and ADR-0001 to ADR-0013 in
+done. On 2026-10-30 the owner answered §7, and ADR-0001 to ADR-0014 in
 `../decisions/` record the answers. Where this plan and a record disagree, the
 record wins. Milestone 1 is next; `../progress.md` holds its slices.
 Owner: d$ / Kiyomi Computation Systems
@@ -235,9 +235,13 @@ layers (ADR-0010). It contains:
     - `null` as the symbol `null` by default, and configurable.
   - `(jsonparse writer)`, values to UTF-8 on a binary port, refusing what JSON
     can't express (ADR-0007, ADR-0011).
+  - `(jsonparse sequence)`, streams of many values: JSON Lines and NDJSON,
+    RFC 7464 sequences, and whitespace-separated values. A bad record is an
+    error, or is skipped and reported (ADR-0014).
 - **the easy layer,** `(jsonparse easy)`: strings, bytevectors and binary
   ports in, values out; `&json-error` on bad input; `json-ref`, `json=?` and
-  pretty printing (ADR-0010).
+  pretty printing (ADR-0010). It also reads and writes JSON Lines and RFC 7464
+  streams (ADR-0014).
 
 Test lanes (the corpora and methods are ADR-0012's):
 
@@ -360,12 +364,14 @@ them:
 ### M4 — YAJL feature parity and serializer
 
 - **Options as settable `mode` bits,** using decision 0047's mechanism:
-  - allow multiple values (done);
+  - allow multiple values (moved into M1, ADR-0014);
   - allow comments (`//` and `/* */` states, gated by a `mask-any` branch at each
     whitespace site);
   - allow trailing garbage;
   - allow partial values (EOF routes check a bit before erroring);
   - skip UTF-8 validation (a second string body that bypasses the UTF-8 states).
+- **One value at a time from a large document:** a tree-builder option that
+  hands each value at a chosen depth to a procedure, then drops it (ADR-0014).
 - **Cancel and pause:** map YAJL's "callback returns 0" onto
   `make-callback-failure`. byte-machine's pause is a superset of what YAJL
   offers.
@@ -428,7 +434,9 @@ The owner also decided:
 - correctness is tested against licensed, vendored corpora and generated
   cases (ADR-0012);
 - performance is compared with yajl and the Scheme peers, on public files
-  (ADR-0013).
+  (ADR-0013);
+- M1 reads and writes JSON Lines, RFC 7464 and whitespace-separated streams,
+  and M4 adds one value at a time from a large document (ADR-0014).
 
 ## 8. Reproducing Milestone 0
 

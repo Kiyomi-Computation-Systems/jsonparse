@@ -13,7 +13,8 @@ newest first.
   the prototype is beside it.
 - **The plan was revised on 2026-10-30 with the owner's answers to its §7.**
   ADR-0001 to ADR-0011 record them, and none of its questions is open.
-  ADR-0012 and ADR-0013 add the test corpora and the benchmark comparators.
+  ADR-0012 to ADR-0014 add the test corpora, the benchmark comparators and
+  streams of values.
 - **Three measurements were made the same day:**
   - the stack, on the prototype regenerated with byte-machine 0.8.0
     (`prototype/stack-*.sps`, ADR-0004);
@@ -63,6 +64,12 @@ newest first.
    - It covers `&json-error` with character offsets.
    - The conformance vectors run through it.
    - The import check refuses any `src/` library that imports it (ADR-0010).
+7. **`(jsonparse sequence)`** and its easy-layer procedures (ADR-0014).
+   - It covers JSON Lines and NDJSON, RFC 7464, and whitespace-separated
+     values.
+   - It reports bad records, and skips them when asked.
+   - Its chunking tests split before, on and after every separator.
+   - It measures the separator scan.
 
 ## Close-outs
 
