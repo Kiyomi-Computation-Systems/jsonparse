@@ -7,3 +7,7 @@ scripts/*  text eol=lf
 # tarballs).
 /.plans     export-ignore
 /AGENTS.md  export-ignore
+
+# Vendored corpora are test data: git must keep every byte as upstream has
+# it, CRs and invalid UTF-8 included.
+/tests/corpus/** -text

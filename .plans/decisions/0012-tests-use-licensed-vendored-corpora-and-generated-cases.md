@@ -1,10 +1,17 @@
 # ADR-0012: Tests use licensed, vendored corpora and generated cases
 
-- **Status:** Accepted
+- **Status:** Accepted, revised the same day
 - **Date:** 2026-10-30
 - **Scope:** the test corpora and the test methods
 - **Related:** plan M1 test lanes; ADR-0002, ADR-0004, ADR-0005, ADR-0008,
   ADR-0011
+
+> **Revision (2026-10-30, slice 1).** The yajl row named `fg_` as an option
+> prefix. yajl's runner turns options on for `ac_`, `ag_`, `am_` and `ap_`
+> only, so `fg_` and `np_` are plain cases. Decision 1 now spells out what
+> `check-corpora` holds, Decision 2 lists yajl's divergences and adds pinned
+> `n_` reasons, and Decision 5 says how the differential and the schedules
+> are run.
 
 ## Context
 
@@ -17,7 +24,7 @@ with no network (ADR-0008), so test data must be in the repository.
 | Corpus | What it has | License |
 |---|---|---|
 | nst/JSONTestSuite `test_parsing` | 95 `y_`, 188 `n_`, 35 `i_` | MIT |
-| yajl `test/parsing/cases` | 58 inputs, each with a `.gold` event stream. Filename prefixes turn on yajl's options: `ac_` 2, `ag_` 3, `am_` 4, `ap_` 4, `fg_` 4. Its runner parses every case with read buffers of 1 to 31 bytes and demands the same output. | ISC |
+| yajl `test/parsing/cases` | 58 inputs, each with a `.gold` event stream. Filename prefixes turn on yajl's options: `ac_` 2, `ag_` 3, `am_` 4, `ap_` 4. The other 45, `fg_` and `np_` included, run with none. Its runner parses every case with read buffers of 1 to 31 bytes and demands the same output. | ISC |
 | SRFI 180 `srfi/files` | 3 JSON Lines files from python-jsonlines, of 2 records each, and 2 RFC 7464 logs from json-text-sequence, one with a broken record | MIT, BSD-3-Clause, MIT |
 | nativejson-benchmark `data/roundtrip` | 27 files that must write back byte for byte | MIT |
 | parse-number-fxx-test-data | lines of a number's text and its float16, float32 and float64 bits; not every text is a JSON number | Apache-2.0 |
@@ -52,18 +59,39 @@ only licensed ones found.
 
 1. **Each vendored corpus lives in `tests/corpus/<name>/`,** with its upstream
    license file and a `SOURCE` file giving the URL, the commit and what was
-   taken. A check fails when either file is missing.
+   taken. `make check-corpora`, which `make test` runs, fails unless:
+   - every entry in `tests/corpus/` is a directory;
+   - each holds a non-empty `LICENSE` and a `SOURCE` with the keys name,
+     url, commit, fetched, taken and license, once each;
+   - nothing under it is named or marked like a JSON_checker file.
+
+   A symlink anywhere counts as missing, and links are never followed. Each
+   corpus arrives with the slice whose gate uses it: JSONTestSuite and yajl
+   in slice 1.
 2. **Vendored corpora, and what each one gates:**
    - **JSONTestSuite:**
      - every `y_` is accepted and every `n_` rejected;
-     - the `i_` results are pinned in a golden file.
+     - the `i_` results, and the code and offset of every `n_` rejection,
+       are pinned in `tests/golden/jsontestsuite.txt`.
+       `tests/write-golden.sps` rewrites it, by hand only.
    - **yajl's 58 cases.** A committed script translates each `.gold` into
      jsonparse's events, and reduces its error text to "rejected".
      - Strict mode must give those events. yajl prints a double to six
        significant digits (`3.141569` as `3.14157`), so doubles are compared
        at that precision.
-     - An option-prefixed case expects rejection in strict mode, and yajl's
-       outcome under the matching option (M4).
+     - An option-prefixed case expects rejection in strict mode, after a
+       prefix of the gold's events, and yajl's outcome under the matching
+       option (M4). The `am_` cases already give the gold's events with the
+       `mode` bit that allows several values.
+     - **Five plain cases diverge,** each listed in `tests/test-yajl.sps`
+       with jsonparse's own events and a reason. The suite fails if a listed
+       case starts to match the gold:
+       - `deep_arrays` nests 1,024 arrays, past the default limit
+         (ADR-0005). It matches the gold with the limit raised.
+       - `high_overflow` and `low_overflow`: integers are exact (ADR-0011).
+       - `isolated_surrogate_marker`: the machine enforces surrogate pairing.
+       - `leading_zero_in_number`: `01` is one malformed number, where yajl
+         prints `integer: 0` first (RFC 8259 §6).
    - **nativejson-benchmark's 27 round-trip files.** Reading then writing
      gives back the file's bytes:
      - in `text` mode, every file;
@@ -88,13 +116,20 @@ only licensed ones found.
    - JSON Lines, NDJSON and RFC 7464, from the specs' text.
 5. **Methods:**
    - **Chunking.**
-     - Small inputs are cut at every split and every pair of splits, using
-       byte-machine's schedules.
-     - Every corpus file is read with chunks of 1 to 31 bytes, as yajl's
-       runner does.
-     - Large files are read with random schedules.
+     - Inputs of at most 64 bytes are cut at every split and every pair of
+       splits, using byte-machine's schedules (`schedules-for`). That covers
+       the in-house cases and 311 of JSONTestSuite's 318 files.
+     - Every corpus file of at most 4 KB is read with chunks of 1 to 31
+       bytes, as yajl's runner does.
+     - Larger files are read with chunks of 1, 7 and 31 bytes and with
+       random schedules.
    - **Differentials:**
-     - the interpreter against the generated parser (byte-machine's driver);
+     - the interpreter against the generated parser. byte-machine's
+       property driver answers decisions from a fixed script, which a stack
+       can't be, so `(jsonparse-testing machine)` runs both lanes with a
+       list stack and compares whole traces under the same schedules. A
+       trace holds every callback with its bytes, and after each feed the
+       status, cursors, error, state name, open span and every field;
      - the tree builder against a tree folded from the events;
      - the easy layer against the low layer (ADR-0010).
    - **Property tests** use `(jsonparse-testing property)`, a test-only
@@ -121,7 +156,8 @@ only licensed ones found.
      - chunking doesn't change the answer;
      - the interpreter and the generated parser agree.
 
-     `make test` runs a fixed seed. A seed and a multiplier given by hand run
+     Each case also draws a depth limit and the `mode` bit. Feeds scale with
+     the input, so most cases are split. `make test` runs a fixed seed. A seed and a multiplier given by hand run
      longer, as circuit's suite allows.
 
 ## Consequences

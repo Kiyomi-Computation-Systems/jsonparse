@@ -23,7 +23,9 @@ record disagree, the record wins and this file gets fixed.
 - **Tooling may use Chez freely.** Guile and Racket are checked by hand
   (ADR-0003).
 - **The grammar and the generator live in `grammar/`,** outside `src/`: they
-  import byte-machine's graph and compiler (ADR-0003).
+  import byte-machine's graph and compiler (ADR-0003). The grammar is
+  `(jsonparse-grammar)`, a name outside `(jsonparse …)`, so no `src/`
+  library can import it.
 
 ## Names and the dependency
 
@@ -31,7 +33,8 @@ record disagree, the record wins and this file gets fixed.
   `(jsonparse …)`, and the generated parser is `(generated jsonparse)`
   (ADR-0001).
 - **The generated parser is committed,** and a check regenerates it and
-  compares the two byte for byte (ADR-0001).
+  compares the two byte for byte (ADR-0001). `make generate` is the only
+  thing that writes it, `#!r6rs` line included.
 - **byte-machine:**
   - `Akku.manifest` declares `^0.8.0`.
   - `vendor/byte-machine` is a submodule pinned at a release tag, and the
@@ -106,7 +109,9 @@ record disagree, the record wins and this file gets fixed.
 ## Tests and benchmarks
 
 - **Every vendored corpus sits in `tests/corpus/<name>/`** with its upstream
-  license and a `SOURCE` file, and a check holds that (ADR-0012).
+  license and a `SOURCE` file, and `make check-corpora` holds that
+  (ADR-0012). Git keeps corpus bytes exactly as upstream has them
+  (`.gitattributes`).
 - **Never vendor:**
   - JSON_checker files, in any copy (the JSON license);
   - data without a license (ADR-0012).
