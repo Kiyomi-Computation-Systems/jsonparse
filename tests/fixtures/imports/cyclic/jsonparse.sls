@@ -1,0 +1,7 @@
+(library (jsonparse)
+  (export)
+  (import (rnrs)
+          #0=(only #0# x)
+          #1=(for #1# run)
+          #2=(rename #2# (a b))
+          #3=(only (rnrs) . #3#)))

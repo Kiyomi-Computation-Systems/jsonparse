@@ -1,0 +1,12 @@
+# build artifacts: the SRFI-64 link tree and anything else we generate
+/build/
+
+# Chez compiled objects / whole-program optimization outputs
+*.so
+*.wpo
+
+# plugin scratch, not the ledger (AGENTS.md)
+/.superpowers/
+
+# linked worktrees made under the checkout
+/.claude/worktrees/

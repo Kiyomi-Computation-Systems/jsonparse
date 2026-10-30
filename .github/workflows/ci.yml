@@ -1,0 +1,178 @@
+name: CI
+
+# Linux only, deliberately (AGENTS.md: do NOT set up macOS runners). One job,
+# run on two images, amd64 and arm64 (ADR-0009): it gets byte-machine and
+# chez-srfi with `make submodules`, holds them at their pins with `make
+# check-pins`, builds Chez at its floor (once, then cached), and runs `make
+# test`, which runs check-help, check-suites, check-versions, check-imports
+# and every suite. No benchmarks (ADR-0013).
+#
+# Every action is pinned to a full commit SHA, with its tag in a comment: a tag
+# can be moved to other code, a commit cannot.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      # A run by hand with a salt misses the Chez cache, so the build-and-save
+      # path runs: proven now, not at the next floor or image bump. A push or
+      # a PR has none, and the key is the cache's usual one.
+      chez-cache-salt:
+        description: "Appended to the Chez cache key, to run its miss path"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# The floor. The job asserts the Chez it ends up with meets it rather than
+# trusting the steps that resolve it. manifest.scm builds the Guix
+# container's Chez at the same version (ADR-0008).
+env:
+  CHEZ_FLOOR_VERSION: "10.4.1"
+
+jobs:
+  linux:
+    name: linux ${{ matrix.arch }}
+    # Explicit images, not ubuntu-latest: that label moves from one Ubuntu
+    # release to the next, and an image change should be a reviewed commit.
+    # Changing an image re-keys the Chez cache (step `os`), and so does the
+    # arch. One arch failing does not cancel the other.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: amd64
+            machine: x86_64
+            chez-machine: ta6le
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+            machine: aarch64
+            chez-machine: tarm64le
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    steps:
+      # The machine is the arch its label names, checked before anything is
+      # built: a label that lands on another arch fails here, by name, not
+      # as a second amd64 run that looks like an arm64 one.
+      - name: Assert the machine is ${{ matrix.machine }}
+        run: |
+          got="$(uname -m)"
+          [ "$got" = "${{ matrix.machine }}" ] || { echo "::error::runner ${{ matrix.runner }} is $got, not ${{ matrix.machine }}"; exit 1; }
+          echo "machine $got"
+
+      # This repository alone, with the job's own token, which is not kept in
+      # .git/config once the checkout is done; `make submodules` below clones
+      # the submodules.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Clone byte-machine and chez-srfi, then verify each is where its pin
+      # records, and byte-machine carries its release tag, before building
+      # anything: a drifted pin fails here, in seconds, not after a cold Chez
+      # build. Both are public, so no token is needed. `make test` needs the
+      # checkouts (deps checks they are there) and never fetches.
+      - name: Init submodules
+        run: make submodules
+
+      - name: Check dependency pins
+        run: make check-pins
+
+      # A C compiler and make for Chez, which scripts/ci/build-chez.sh
+      # configures with no X11 or curses; curl, which fetches Chez; coreutils
+      # is GNU timeout, which `make test` runs under, and sha256sum, which
+      # checks the Chez tarball. Most are already on the image: naming them
+      # keeps the job from depending on that.
+      - name: Install toolchain
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            build-essential git curl coreutils
+
+      # The OS release for the Chez cache key, read off the machine rather than
+      # restated from runs-on (which a bump could forget), so a new image misses
+      # the cache instead of restoring a Chez built against another release's
+      # libraries. An empty ID or VERSION_ID fails the step.
+      - name: Identify the OS release
+        id: os
+        run: |
+          . /etc/os-release
+          echo "release=${ID:?}-${VERSION_ID:?}" >> "$GITHUB_OUTPUT"
+
+      # apt's chezscheme is below the floor, so build 10.4.1 from its
+      # sha256-pinned release tarball and cache it, keyed on the build script
+      # (which holds the version, the sum and the configure line), the OS
+      # release and the arch: a change to any must miss, not merge.
+      - name: Restore cached Chez Scheme
+        id: chez-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.local/chez
+          key: chez-${{ runner.os }}-${{ steps.os.outputs.release }}-${{ runner.arch }}-${{ hashFiles('scripts/ci/build-chez.sh') }}${{ inputs.chez-cache-salt }}
+
+      - name: Build Chez Scheme from source (apt's is below the floor)
+        if: steps.chez-cache.outputs.cache-hit != 'true'
+        run: scripts/ci/build-chez.sh "$HOME/.local/chez"
+
+      # Saved here, not by the cache action's post-step, so a failed later step
+      # never publishes a half-installed prefix under the key.
+      - name: Save built Chez Scheme
+        if: steps.chez-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.local/chez
+          key: ${{ steps.chez-cache.outputs.cache-primary-key }}
+
+      # CHEZ names the binary just built or restored, by its path: no search
+      # of PATH, where another `scheme` or `chez` could come first. Every
+      # later step and `make` read it.
+      - name: Name the Chez binary
+        run: echo "CHEZ=$HOME/.local/chez/bin/scheme" >> "$GITHUB_ENV"
+
+      - name: Assert Chez meets the declared floor
+        run: |
+          raw="$($CHEZ --version 2>&1)"
+          ver="$(echo "$raw" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
+          [ -n "$ver" ] || { echo "::error::could not parse a Chez version from '$raw'"; exit 1; }
+          lowest="$(printf '%s\n%s\n' "$ver" "$CHEZ_FLOOR_VERSION" | sort -V | head -1)"
+          [ "$lowest" = "$CHEZ_FLOOR_VERSION" ] || { echo "::error::Chez $ver is below the floor $CHEZ_FLOOR_VERSION"; exit 1; }
+          echo "Chez $ver satisfies the $CHEZ_FLOOR_VERSION floor"
+
+      # Chez's own machine type, the one its configure chose for this arch,
+      # threaded: a Chez restored or built for another arch fails here.
+      - name: Assert Chez is a ${{ matrix.chez-machine }} build
+        run: |
+          got="$(echo '(display (machine-type))' | $CHEZ -q --script /dev/stdin)"
+          [ "$got" = "${{ matrix.chez-machine }}" ] || { echo "::error::Chez's machine type is $got, not ${{ matrix.chez-machine }}"; exit 1; }
+          echo "Chez machine type $got"
+
+      # jsonparse has no --nothreads lane: a Chez without threads
+      # fails here, by name, not inside the first import.
+      - name: Assert Chez is a threaded build
+        run: |
+          $CHEZ -q --script /dev/stdin <<'EOF'
+          (if (threaded?)
+              (begin (display "Chez is threaded") (newline) (exit 0))
+              (begin (display "Chez is not a threaded build" (current-error-port))
+                     (newline (current-error-port))
+                     (exit 1)))
+          EOF
+
+      - name: Report versions
+        run: |
+          $CHEZ --version 2>&1 || true
+          timeout --version | head -1
+
+      # check-help, check-chez, check-suites, check-versions, check-imports once src/
+      # exists, then every suite as its own process under timeout. `deps`
+      # links SRFI-64 first.
+      - name: Test
+        run: make test

@@ -20,8 +20,9 @@ newest first.
     (`prototype/stack-*.sps`, ADR-0004);
   - number conversion and printing (ADR-0011);
   - how textual ports decode invalid UTF-8 (ADR-0010).
-- **Nothing under `src/` exists yet.** Nothing is merged since the initial
-  commit.
+- **The planning merged on 2026-10-30** as #1.
+- **Slice 0, the scaffolding, is done** (close-out below). Nothing under
+  `src/` exists yet. Slice 1 of M1, the grammar and the generator, is next.
 
 ## Next
 
@@ -40,8 +41,9 @@ newest first.
 **Milestone 1, in order:**
 
 1. **The grammar and generator.**
-   - They move under `src/`, and the committed `(generated jsonparse)` gets
-     its regeneration check.
+   - They move from the prototype into `grammar/`, outside `src/`
+     (ADR-0003). The committed `(generated jsonparse)` gets its regeneration
+     check.
    - The corpora are vendored, with the license and `SOURCE` check
      (ADR-0012).
    - Gates: JSONTestSuite `y_` and `n_`, the `i_` results pinned in a golden
@@ -74,4 +76,36 @@ newest first.
 
 ## Close-outs
 
-None yet.
+### Slice 0: scaffolding (2026-10-30)
+
+- **Landed:**
+  - **The pinned Guix container:** `channels.scm`, `manifest.scm`,
+    `scripts/guix-env*` and `make check-guix` (ADR-0008).
+  - **The Makefile:** `help`, `check-help`, `check-chez` (the 10.4.1
+    floor), `submodules`, `check-pins` (gitlinks and the `v0.8.0` tag),
+    `deps`, `test`, `check-suites`, `check-imports` and `check-versions`.
+  - **Dependencies:** `vendor/byte-machine` at `v0.8.0` and `vendor/chez-srfi`
+    at `7879b52`.
+  - **Akku:** `Akku.manifest` (`^0.8.0`), `Akku.lock`, `.akkuignore` and
+    `.gitattributes` (ADR-0002, ADR-0003).
+  - **Test libraries:** `(jsonparse-testing)` and
+    `(jsonparse-testing property)` (ADR-0012).
+  - **CI:** on `ubuntu-24.04` and `ubuntu-24.04-arm`, with architecture
+    checks (ADR-0009).
+- **Evidence:**
+  - `scripts/guix-env make test` runs 5 suites: 38, 16, 29, 45 and 52
+    passes.
+  - `make check-guix` passes, including 88 launcher cases.
+  - The builders watched every rule fail: 87 mutants, then the reviewer's.
+    One survivor is left: dropping `make-capture-directory`'s mutex, which
+    `mkdir`'s own refusal makes harmless.
+- **Review:** an adversarial review found:
+  - checks that couldn't fail: `make test`'s verdict, `check-help`, the
+    generators' edges, a bare `(exit)`;
+  - a false packaging claim in ADR-0003;
+  - a silent run below the Chez floor.
+
+  All are fixed, each with a case watched fail.
+- **Known:** `make check-pins` reads gitlinks from HEAD, so a staged bump
+  fails it until committed. Nothing checks the `.gitattributes`
+  export-ignore yet; plan M5's `check-akku` will.

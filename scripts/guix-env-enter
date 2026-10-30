@@ -1,0 +1,25 @@
+#!/bin/sh
+# Runs INSIDE the container, as the first command scripts/guix-env starts.
+# Exports what the Makefile and the suites take from the profile, then runs
+# the command:
+#
+#   CHEZ  the profile's scheme, the real binary: a symlink named chez
+#         breaks Chez's boot-file lookup
+set -eu
+
+die() { printf 'guix-env-enter: %s\n' "$*" >&2; exit 2; }
+
+if [ -z "${GUIX_ENVIRONMENT:-}" ]; then
+  die "not inside a Guix environment; use scripts/guix-env"
+fi
+
+# need FILE: dies unless FILE is a regular file, or a symlink to one.
+need() {
+  [ -f "$1" ] || die "no $1 in the profile; is its package in manifest.scm?"
+}
+
+need "$GUIX_ENVIRONMENT/bin/scheme"
+
+export CHEZ="$GUIX_ENVIRONMENT/bin/scheme"
+
+exec "$@"

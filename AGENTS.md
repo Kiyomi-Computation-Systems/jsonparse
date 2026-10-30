@@ -63,6 +63,8 @@
   expect `#f` from something that can raise.
 * Every `tests/test-*.sps` must end with its own `(exit …)`: SRFI-64 sets no
   exit status. Anything after that line never runs.
+* Chez exits 0 for a bare `(exit)` and for `(exit 256)` (statuses wrap), and
+  1 for `(exit #t)`. Exit with 0 or 1 only.
 * Chez evaluates arguments right to left in compiled library code, left to
   right when interpreted. No assertion may depend on argument order.
 * An assertion passes whenever *another* rule can produce its expected value.
@@ -76,6 +78,8 @@
   fail now?"; "nothing" is a defect.
 * Point `CHEZ` at the real binary: a symlink breaks boot-file lookup, and a
   wrapper script hides Chez from Valgrind. `make check-guix` checks it.
+* In a shell, `$?` after a pipe is the last command's status, not the
+  suite's. Read `PIPESTATUS`, or run the suite outside the pipe.
 * `guix shell --pure` does not stop a login shell from rebuilding `PATH`.
   `scripts/guix-env` uses `--container`, and `make check-guix` checks where a
   login shell finds each tool.

@@ -1,0 +1,6 @@
+#!r6rs ; -*- scheme -*-
+(import (akku format manifest))
+
+(akku-package ("byte-machine" "1.12.3-rc1")
+  (synopsis "a fixture")
+  (license "BSD-3-Clause"))

@@ -1,0 +1,6 @@
+[submodule "vendor/byte-machine"]
+	path = vendor/byte-machine
+	url = https://github.com/Kiyomi-Computation-Systems/byte-machine.git
+[submodule "vendor/chez-srfi"]
+	path = vendor/chez-srfi
+	url = https://github.com/arcfide/chez-srfi.git
