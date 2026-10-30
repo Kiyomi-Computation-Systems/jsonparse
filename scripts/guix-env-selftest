@@ -1,0 +1,117 @@
+#!/bin/sh
+# Runs INSIDE the pinned container, as `make check-guix-inside`. Not a
+# launcher: `make check-guix` runs tests/guix-env-launcher.sh on the host,
+# then this through scripts/guix-env. Asserts what the environment exists
+# for. Each failure names its assertion.
+set -u
+
+if [ -z "${GUIX_ENVIRONMENT:-}" ]; then
+  echo "check-guix: FAILED not-in-environment: this is the self-test, not the launcher; use make check-guix" >&2
+  exit 2
+fi
+
+fail=0
+ok()  { echo "check-guix: ok $*"; }
+bad() { echo "check-guix: FAILED $*" >&2; fail=1; }
+
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+
+# Assertion 1: nothing of the host's HOME is visible. The container's HOME
+# holds at most the directories leading down to the repository, which it
+# shares; anything else (a dotfile, a key, a host tool's config) means the
+# isolation this environment exists for is gone.
+home_ok=1
+for e in "$HOME"/* "$HOME"/.[!.]* "$HOME"/..?*; do
+  [ -e "$e" ] || continue
+  case "$PWD/" in
+    "$e"/*) ;;
+    *) bad "isolated-home: $e is visible inside the container"; home_ok=0 ;;
+  esac
+done
+[ "$home_ok" -eq 1 ] && ok "isolated-home ($HOME holds only the path to $PWD)"
+
+# Assertion 2: however a login shell finds a tool, it runs the pinned
+# binary. Both forms, since rc files branch on $-. Compared by resolved
+# path: a host or guix-home copy that is a different store item is not the
+# pinned one.
+for mode in -lc -lic; do
+  for tool in scheme make timeout awk sed grep mktemp; do
+    p=$(bash "$mode" "command -v $tool" 2>/dev/null | tail -n 1)
+    want=$(readlink -f "$GUIX_ENVIRONMENT/bin/$tool")
+    got=
+    [ -n "$p" ] && got=$(readlink -f "$p")
+    if [ -n "$got" ] && [ "$got" = "$want" ]; then
+      ok "tool-path[$mode] ($tool: $p)"
+    else
+      bad "tool-path[$mode]: $tool resolves to '${got:-nothing}' (via '${p:-nothing}'), expected $want"
+    fi
+  done
+done
+
+# Assertion 3: the Makefile's $(CHEZ) is the profile's Chez binary itself,
+# not a symlink named chez, which breaks boot-file lookup, nor a wrapper.
+chez=${CHEZ:-}
+case "$chez" in
+  "$GUIX_ENVIRONMENT"/*) ok "chez-variable ($chez)" ;;
+  *) bad "chez-variable: CHEZ is '${chez:-unset}', expected under $GUIX_ENVIRONMENT" ;;
+esac
+magic=$(head -c 4 "$chez" 2>/dev/null | od -An -tx1 | tr -d ' \n')
+if [ "$magic" = 7f454c46 ]; then
+  ok "chez-is-elf"
+else
+  bad "chez-is-elf: '${chez:-unset}' starts with '${magic:-nothing}', not an ELF header"
+fi
+
+# Assertion 4: Chez is jsonparse's floor, 10.4.1 (ADR-0008), and threaded,
+# like the CI build. Exit 3 means threaded, 4 not, and anything else that
+# Chez itself failed.
+version=$("$chez" --version 2>&1)
+if [ "$version" = 10.4.1 ]; then
+  ok "chez-version ($version)"
+else
+  bad "chez-version: '${chez:-unset}' --version says '$version', expected 10.4.1"
+fi
+printf '%s\n' '(exit (if (threaded?) 3 4))' | "$chez" -q >/dev/null 2>&1
+status=$?
+case "$status" in
+  3) ok "chez-threaded" ;;
+  4) bad "chez-threaded: '${chez:-unset}' is not a threaded build" ;;
+  *) bad "chez-threaded: '${chez:-unset}' exited $status, expected 3" ;;
+esac
+
+# Assertion 5: the network is loopback only. A closed loopback port refuses
+# the connection, so loopback is up, and an outside address (TEST-NET-1,
+# RFC 5737) is unreachable at once, not merely silent. bash's /dev/tcp
+# makes the connections; nothing listens on either port.
+inside=$(bash -c 'exec 3<>/dev/tcp/127.0.0.1/9' 2>&1)
+outside=$(bash -c 'exec 3<>/dev/tcp/192.0.2.1/9' 2>&1)
+case "$inside|$outside" in
+  *"Connection refused"*"|"*"Network is unreachable"*)
+    ok "loopback-only (127.0.0.1 refused; 192.0.2.1 unreachable)" ;;
+  *) bad "loopback-only: 127.0.0.1 said '$inside'; 192.0.2.1 said '$outside'" ;;
+esac
+
+# Assertion 6: there is no git in here. In a git worktree, .git names a
+# directory outside the one directory this container shares, so git here
+# would read nothing, and whatever needed it would fail in every worktree.
+if p=$(command -v git); then
+  bad "no-git: git is at $p; anything that needs git runs on the host"
+else
+  ok "no-git"
+fi
+
+# Assertion 7: the Makefile's own checks pass in here too: check-help, and
+# test, which runs every suite. check-pins is not one of them: it needs git,
+# so it runs on the host and in CI.
+if ! make --no-print-directory check-help; then
+  bad "check-help"
+fi
+if ! make --no-print-directory test; then
+  bad "test"
+fi
+
+if [ "$fail" -eq 0 ]; then
+  echo "check-guix: ALL CHECKS PASSED"
+fi
+exit "$fail"

@@ -1,0 +1,4 @@
+#!r6rs
+(import (akku format lockfile))
+(projects
+ ((name "byte-machine")

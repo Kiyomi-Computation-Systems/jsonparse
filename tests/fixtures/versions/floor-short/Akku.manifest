@@ -1,0 +1,11 @@
+#!r6rs ; -*- scheme -*-
+(import (akku format manifest))
+
+;; A dependency whose name begins with byte-machine's, before it, and
+;; byte-machine itself, at a version none of the defaults hold.
+(akku-package ("jsonparse" "2.0.0")
+  (synopsis "a fixture")
+  (depends ("byte-machine-extras" "^9.9.9")
+           ("byte-machine" "^1.12")
+           ("chez-srfi" "^0.0.0"))
+  (depends/dev ("byte-machine" "^7.7.7")))

@@ -30,6 +30,10 @@ only licensed ones found.
 
 **The test machinery within reach:**
 
+- **SRFI-64 comes from chez-srfi,** a submodule at `vendor/chez-srfi`. It is
+  pinned at the commit chez-http-server pins, `7879b52`. chez-srfi has no
+  release tags upstream.
+
 - **circuit's property suite** (`tests/test-router-properties.sps`) has:
   - seeded generators whose cases depend only on the seed and the case
     number;
@@ -93,9 +97,23 @@ only licensed ones found.
      - the interpreter against the generated parser (byte-machine's driver);
      - the tree builder against a tree folded from the events;
      - the easy layer against the low layer (ADR-0010).
-   - **Property tests** use a test-only library modelled on circuit's: seeded,
-     shrinking, failures printed as data. It generates JSON values for the
-     round trip and the writer (ADR-0007, ADR-0011).
+   - **Property tests** use `(jsonparse-testing property)`, a test-only
+     library modelled on circuit's: seeded, shrinking, failures printed as
+     data. The writer slice adds a JSON value generator for the round trip and
+     the writer (ADR-0007, ADR-0011).
+     - **The seed travels in a run record,** since R6RS forbids assigning an
+       exported variable.
+     - **A case's first state comes from mixing,** not from circuit's formula.
+       It applies murmur3's 32-bit finalizer to the seed, then the property,
+       then the case index. Circuit's formula is affine in the index, as is
+       the sequence that follows it. Measured on 2026-10-30, neighbouring
+       cases drew the same first `(g-int 100)` 1,300 times in 3,999, where
+       chance is about 40. Mixing gives 47. A suite row fails under circuit's
+       formula.
+     - **`g-int` draws uniformly, by rejection.** Circuit's takes 15 bits
+       modulo n, which is biased. For n = 20,000, values below 12,768 drew
+       78% of the time, where uniform is 64%. A suite row fails on the
+       biased version.
    - **Mutation fuzzing.** Seeded byte mutations of the corpus files must keep
      these invariants:
      - the low layer never raises;

@@ -17,10 +17,13 @@ record disagree, the record wins and this file gets fixed.
 ## Portability
 
 - **Every library under `src/` starts with `#!r6rs`.** It imports only
-  `(rnrs …)`, `(jsonparse …)`, `(generated jsonparse)` and
-  `(byte-machine runtime)`, and a check holds that (ADR-0003).
+  `(rnrs …)` but `(rnrs eval)`, `(jsonparse …)`, `(generated jsonparse)` and
+  `(byte-machine runtime)`, and `tests/check-imports.sps` holds that
+  (ADR-0003).
 - **Tooling may use Chez freely.** Guile and Racket are checked by hand
   (ADR-0003).
+- **The grammar and the generator live in `grammar/`,** outside `src/`: they
+  import byte-machine's graph and compiler (ADR-0003).
 
 ## Names and the dependency
 
@@ -36,6 +39,10 @@ record disagree, the record wins and this file gets fixed.
   - The gitlink, the floor and `Akku.lock` move together (ADR-0002).
 - **A change that needs a new byte-machine ABI** ships with the sibling
   consumers' regenerated parsers (ADR-0002).
+- **chez-srfi**, for SRFI-64 in tests only, is pinned at a commit, since
+  upstream has no tags (ADR-0012).
+- **Only `src/` reaches the Akku package.** `.akkuignore` and
+  `.gitattributes` keep the rest out (ADR-0003).
 
 ## Layers
 
@@ -43,7 +50,9 @@ record disagree, the record wins and this file gets fixed.
   `(jsonparse tree)`, `(jsonparse writer)`, `(jsonparse sequence)` and their
   supporting libraries. It takes bytes, counts offsets in bytes, and never
   raises on bad input (ADR-0010, ADR-0014).
-- **`(jsonparse easy)` composes low-layer exports only.** It raises
+- **`(jsonparse easy)` composes low-layer exports only:** it imports only
+  `(rnrs …)` and `(jsonparse …)` libraries, and `tests/check-imports.sps`
+  holds that. It raises
   `&json-error`, whose offset counts characters for a string and bytes
   otherwise (ADR-0010).
 - **No library under `src/` imports `(jsonparse easy)`,** and the import check

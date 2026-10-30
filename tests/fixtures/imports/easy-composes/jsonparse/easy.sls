@@ -1,0 +1,10 @@
+#!r6rs
+(library (jsonparse easy)
+  (export)
+  (import (rnrs)
+          (only (rnrs bytevectors) utf8->string)
+          (jsonparse tree)
+          (byte-machine runtime)
+          (prefix (generated jsonparse) g:)
+          (only (byte-machine runtime (0 8)) feed)
+          (chezscheme)))

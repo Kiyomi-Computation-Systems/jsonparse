@@ -1,0 +1,20 @@
+#!r6rs ; -*- scheme -*-
+(import (akku format manifest))
+
+;; No `depends` clause: the libraries import only (rnrs), and a generated
+;; parser imports only (rnrs) and (byte-machine runtime). The test suite runs
+;; through CMake and needs no Akku package either, so there is no
+;; `depends/dev`.
+;;
+;; Akku installs the libraries under src/byte-machine/. Everything under test/
+;; is classified as test code and is not installed, and the programs under
+;; bench/ and examples/ are not installed because Akku installs programs only
+;; from bin/, demos/ or programs/. `akku scan .` prints that classification.
+(akku-package ("byte-machine" "3.0.0")
+  (synopsis "Generator of fast, resumable, byte-level parsers")
+  (description
+   "Describe a parser as a state machine over bytes, built with ordinary Scheme procedures. byte-machine verifies it and emits a plain R6RS library that parses input incrementally: feed it bytes as they arrive, in any split, and it calls you back."
+   "The generated library depends only on (rnrs) and (byte-machine runtime). Spans are delivered as ranges into the fed bytevector, and the generated per-byte path allocates nothing.")
+  (authors "Kiyomi Computation Systems LLC")
+  (homepage "https://github.com/Kiyomi-Computation-Systems/byte-machine")
+  (license "BSD-3-Clause"))

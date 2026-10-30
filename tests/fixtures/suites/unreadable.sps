@@ -1,0 +1,2 @@
+(import (rnrs))
+(display "unclosed"

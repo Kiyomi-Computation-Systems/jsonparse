@@ -1,0 +1,9 @@
+# Kept LF in every checkout: sh cannot run a script with CRs.
+*.sh       text eol=lf
+scripts/*  text eol=lf
+
+# Design records, the ledger and the coding agents' instructions stay in the
+# repository but out of release archives (git archive, GitHub's source
+# tarballs).
+/.plans     export-ignore
+/AGENTS.md  export-ignore
