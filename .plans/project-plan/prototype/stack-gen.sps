@@ -1,0 +1,13 @@
+;; Generates the two parsers stack-bench.sps compares (ADR-0004).
+(import (rnrs) (byte-machine compile) (prefix (bmjson grammar) a:) (prefix (bmjson grammar-fs) b:))
+(define (gen m binding path)
+  (let ((c (compile-machine m '())))
+    (unless (compilation-ok? c)
+      (for-each (lambda (d) (write d) (newline)) (compilation-diagnostics c))
+      (exit 1))
+    (when (file-exists? path) (delete-file path))
+    (call-with-port (open-file-output-port path)
+      (lambda (p) (emit-machine c binding p)))))
+(gen a:json-machine 'json-parser "generated/json.sls")
+(gen b:json-machine 'jsonfs-parser "generated/jsonfs.sls")
+(display "generated\n")
