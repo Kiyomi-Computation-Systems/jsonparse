@@ -81,6 +81,17 @@ record disagree, the record wins and this file gets fixed.
   `|` mantissa width from flonums, and refuses exact fractions with no finite
   decimal (ADR-0011).
 
+## Tests and benchmarks
+
+- **Every vendored corpus sits in `tests/corpus/<name>/`** with its upstream
+  license and a `SOURCE` file, and a check holds that (ADR-0012).
+- **Never vendor:**
+  - JSON_checker files, in any copy (the JSON license);
+  - data without a license (ADR-0012).
+- **`make test` needs no network and no comparator.** Benchmark files are
+  fetched on the host, checked by SHA-256, and never committed (ADR-0012,
+  ADR-0013).
+
 ## Environment
 
 - **On a Guix host, build and test through `scripts/guix-env`.** It has no

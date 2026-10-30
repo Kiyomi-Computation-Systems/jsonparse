@@ -2,7 +2,7 @@
 
 Date: 2026-10-03
 Status: accepted with revisions. Milestone 0 (prototype and measurement) is
-done. On 2026-10-30 the owner answered §7, and ADR-0001 to ADR-0011 in
+done. On 2026-10-30 the owner answered §7, and ADR-0001 to ADR-0013 in
 `../decisions/` record the answers. Where this plan and a record disagree, the
 record wins. Milestone 1 is next; `../progress.md` holds its slices.
 Owner: d$ / Kiyomi Computation Systems
@@ -239,12 +239,19 @@ layers (ADR-0010). It contains:
   ports in, values out; `&json-error` on bad input; `json-ref`, `json=?` and
   pretty printing (ADR-0010).
 
-Test lanes:
+Test lanes (the corpora and methods are ADR-0012's):
 
 - JSONTestSuite `y_`/`n_` as a gate;
 - `i_` results pinned in a golden file;
-- chunking invariance over every split point for small inputs, plus random
+- yajl's 58 cases, checked against their event streams;
+- nativejson-benchmark's round-trip files, SRFI 180's JSON Lines and RFC 7464
+  files, and float64 bits for number texts;
+- cases written in-house for UTF-8, numbers, depth, JSON Lines and RFC 7464,
+  each citing its spec clause;
+- chunking invariance over every split point and pair of split points for
+  small inputs, chunks of 1 to 31 bytes for every corpus file, and random
   schedules for large ones;
+- mutation fuzzing of the corpus files at a fixed seed;
 - a differential lane, byte-machine's interpreter versus generated code, using
   the project's existing harness;
 - property tests from a JSON generator, checking that serialize → parse is the
@@ -325,7 +332,10 @@ them:
 
 1. **Measure first.** Run the benchmarks on Chez ≥ 10.4.1 in the AOT lane on
    `tarm64osx`, so the numbers are comparable with byte-machine's own baseline.
-   9.5.8 in source mode is not representative.
+   9.5.8 in source mode is not representative. Set up the comparators, the
+   public files and the method in ADR-0013 first. yajl, RapidJSON, Jackson
+   and SRFI 180 cover events only; Racket, Guile, Gambit, Gerbil, Chibi and
+   chez-json cover trees; simdjson and yyjson are the ceiling.
 2. **A run node kind.** "Consume while the byte is in class C" as one
    node: llparse's span-consume loop, or YAJL's string scan. It lowers to a tight
    index loop with no per-byte state dispatch. The verifier treats it as a byte
@@ -415,6 +425,10 @@ The owner also decided:
 - the libraries are portable R6RS, and the tooling is Chez (ADR-0003);
 - the development environment is a pinned Guix container (ADR-0008);
 - CI runs on Linux amd64, with arm64 later (ADR-0009).
+- correctness is tested against licensed, vendored corpora and generated
+  cases (ADR-0012);
+- performance is compared with yajl and the Scheme peers, on public files
+  (ADR-0013).
 
 ## 8. Reproducing Milestone 0
 
