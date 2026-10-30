@@ -34,12 +34,18 @@ SRFI_PIN := 7879b527f267f067416552fb989135ad1b4ea436  # the pin chez-http-server
 # LIBDIRS is the path `make run` and `make dev` use: jsonparse's src/, then
 # byte-machine's runtime. build/scheme-libs carries (srfi :64).
 #
-# TEST_LIBDIRS is the suites' path: LIBDIRS, then tests/, which holds
-# (jsonparse-testing). Test code stays off LIBDIRS.
+# TEST_LIBDIRS is the suites' path: LIBDIRS; tests/, which holds
+# (jsonparse-testing); grammar/, which holds (jsonparse-grammar) for the
+# regeneration check and the interpreter; and byte-machine's test harness,
+# for its feed schedules (ADR-0012). Test code and the grammar stay off
+# LIBDIRS.
 BUILD_DIR := build
 SRFI_LIBS := $(BUILD_DIR)/scheme-libs
 LIBDIRS := src:$(BYTE_MACHINE_DIR)/src:$(SRFI_LIBS)
-TEST_LIBDIRS := $(LIBDIRS):tests
+TEST_LIBDIRS := $(LIBDIRS):tests:grammar:$(BYTE_MACHINE_DIR)/test/support/harness
+
+# The generated parser and the program that writes it (ADR-0001).
+GENERATED := src/generated/jsonparse.sls
 
 # Every suite, in one order everywhere: make 3.82 to 4.2 leave $(wildcard)
 # unsorted.
@@ -54,7 +60,7 @@ TIMEOUT ?= $(or $(shell command -v timeout 2>/dev/null),$(shell command -v gtime
 
 # One physical line: check-help reads it with awk, and fails if it ends in
 # a backslash.
-.PHONY: help check-help check-guix check-guix-inside submodules check-pins check-chez deps dev run test check-suites check-imports check-versions clean
+.PHONY: help check-help check-guix check-guix-inside submodules check-pins check-chez deps dev run generate test check-suites check-imports check-versions check-corpora clean
 
 .DEFAULT_GOAL := help
 
@@ -190,6 +196,15 @@ run: deps ## Run a program on the library path: make run PROGRAM=examples/hello.
 	@test -n "$(PROGRAM)" || { echo "run: set PROGRAM=path/to/program.sps" >&2; exit 2; }
 	$(CHEZ) --libdirs $(LIBDIRS) --program $(PROGRAM)
 
+# The only way $(GENERATED) is written. It needs byte-machine's compiler, not
+# just its runtime, so the path is grammar/ and byte-machine's src/.
+# tests/test-generated.sps renders the machine again and fails unless the
+# committed file matches it byte for byte.
+generate: ## Regenerate src/generated/jsonparse.sls from grammar/
+	@scripts/require-tools "$(GOAL)" $(CHEZ)
+	@mkdir -p $(dir $(GENERATED))
+	$(CHEZ) --libdirs grammar:$(BYTE_MACHINE_DIR)/src --program grammar/emit.sps $(GENERATED)
+
 # Runs each suite as its own process under GNU timeout and reports its exit
 # status, or HUNG when timeout killed it (exit 124). It fails if any suite
 # failed or hung, or if none matched. At a terminal, --foreground keeps a
@@ -200,7 +215,7 @@ run: deps ## Run a program on the library path: make run PROGRAM=examples/hello.
 # check-help, check-suites and, once src/ exists, check-imports each stop
 # it, so the first library under src/ is audited without anyone
 # remembering to.
-test: deps check-help check-chez check-suites check-versions $(if $(wildcard src),check-imports) ## Run every tests/test-*.sps under timeout; fail if one fails or hangs, or none exists
+test: deps check-help check-chez check-suites check-versions check-corpora $(if $(wildcard src),check-imports) ## Run every tests/test-*.sps under timeout; fail if one fails or hangs, or none exists
 	@scripts/require-tools "$(GOAL)" $(TIMEOUT) $(CHEZ)
 	@if [ -z "$(SUITES)" ]; then \
 	  echo "test: no suites: nothing matches tests/test-*.sps" >&2; \
@@ -245,6 +260,13 @@ check-imports: deps ## Fail unless every library under src/ imports only what th
 check-versions: deps ## Fail unless the Akku floor, Akku.lock and the vendored byte-machine's version agree
 	@scripts/require-tools "$(GOAL)" $(CHEZ)
 	@$(CHEZ) --libdirs $(TEST_LIBDIRS) --program tests/check-versions.sps
+
+# Fails unless every directory under tests/corpus/ carries its upstream
+# LICENSE and a SOURCE with the six keys, and no JSON_checker file sits below
+# it (tests/check-corpora.sps, ADR-0012). Needs no git.
+check-corpora: deps ## Fail unless each corpus under tests/corpus has a LICENSE and a SOURCE, and none holds JSON_checker files
+	@scripts/require-tools "$(GOAL)" $(CHEZ)
+	@$(CHEZ) --libdirs $(TEST_LIBDIRS) --program tests/check-corpora.sps tests/corpus
 
 clean: ## Remove build/
 	rm -rf build

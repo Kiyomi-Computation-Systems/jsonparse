@@ -27,4 +27,12 @@ prototype fixed it at 512 when the parser was generated.
 ## Consequences
 
 - The stack (ADR-0004) is sized from the same setting.
-- The field's width bounds the largest limit. Pick it in M1 and document it.
+- **The field's width bounds the largest limit.** Slice 1 of M1 picked 16
+  bits, so the limit runs from 0 to 65535:
+  - the field is `depth-left`, settable, declared at 512;
+  - `make-parser` raises for 65536 or more;
+  - at 0 only a top-level scalar parses.
+
+  The grammar keeps `depth`, counting up, beside it. A field branch tests a
+  field against a constant only, and the limit is not one, so only `depth`
+  can say when the parser is back at the top level.

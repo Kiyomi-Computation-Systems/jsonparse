@@ -1,0 +1,6 @@
+name: widgets
+url: https://example.org/widgets
+commit: 0123456789ABCDEF0123456789ABCDEF01234567
+fetched: 2026-01-02
+taken: data/, all files, unchanged
+license: MIT; LICENSE is the upstream file, unchanged

@@ -21,26 +21,16 @@ newest first.
   - number conversion and printing (ADR-0011);
   - how textual ports decode invalid UTF-8 (ADR-0010).
 - **The planning merged on 2026-10-30** as #1.
-- **Slice 0, the scaffolding, is done** (close-out below). Nothing under
-  `src/` exists yet. Slice 1 of M1, the grammar and the generator, is next.
+- **Slice 0, the scaffolding, is done** (close-out below).
+- **Slice 1 of M1, the grammar and the generator, is done** (close-out
+  below). `src/` holds only the generated parser. Slice 2, `(jsonparse
+  parser)`, is next.
 
 ## Next
 
-**Slice 0, scaffolding:**
-
-- the Guix container (ADR-0008);
-- the Makefile with `help` and `check-help`;
-- `vendor/byte-machine`, `Akku.manifest` and `Akku.lock`, and the pin check
-  (ADR-0002);
-- the import check (ADR-0003);
-- an SRFI-64 harness;
-- the test-only property library, modelled on circuit's (ADR-0012);
-- CI on Linux amd64 and arm64, each job checking its architecture
-  (ADR-0009).
-
 **Milestone 1, in order:**
 
-1. **The grammar and generator.**
+1. **The grammar and generator** (done, close-out below).
    - They move from the prototype into `grammar/`, outside `src/`
      (ADR-0003). The committed `(generated jsonparse)` gets its regeneration
      check.
@@ -53,11 +43,17 @@ newest first.
    - It covers the internal stack, the options record and the depth limit
      (ADR-0004, ADR-0005).
    - Its results use jsonparse's own types (ADR-0010).
-   - The stack's mutation tests are watched fail.
+   - The stack's mutation tests are watched fail. The list stack in
+     `(jsonparse-testing machine)` is the reference to check it against.
+   - **It checks the depth limit itself, and raises its own condition** for
+     one out of range. byte-machine's refusal of a field value is a private
+     condition type that callers can't name.
 3. **`(jsonparse string)`.**
    - It assembles strings and numbers.
    - It covers the three number modes and the digit limit, whose boundary
      tests are watched fail (ADR-0011).
+   - **A high surrogate's `escape` event comes before its low half is
+     read.** Nothing is committed until the pair completes.
 4. **`(jsonparse tree)`,** with the value options (ADR-0006).
 5. **`(jsonparse writer)`.**
    - It covers the refusals, number formatting and pretty printing (ADR-0007,
@@ -73,8 +69,81 @@ newest first.
    - It reports bad records, and skips them when asked.
    - Its chunking tests split before, on and after every separator.
    - It measures the separator scan.
+   - **`values` follows ADR-0014's revision.** Objects, arrays and strings
+     need no separator after them. A top-level number or literal needs
+     whitespace or the end of the input after it, so `1-2` and `truefalse`
+     are errors. An empty stream holds no values.
+     - That is a grammar change under the `mode` bit.
+     - The `machine` suite's mode cases, which pin today's behaviour, change
+       with it.
 
 ## Close-outs
+
+### Slice 1: the grammar and the generator (2026-10-30)
+
+- **Landed:**
+  - **The grammar:** `(jsonparse-grammar)` in `grammar/`, moved from the
+    prototype. The machine is named `jsonparse`, and the depth limit is set
+    per parser with a settable 16-bit field, `depth-left`, defaulting to 512
+    (ADR-0005).
+  - **The generated parser:** `make generate` (`grammar/emit.sps`) writes
+    the committed `src/generated/jsonparse.sls`, and `test-generated` holds
+    the two byte for byte.
+  - **Corpora:** JSONTestSuite (MIT) and yajl's cases (ISC) in
+    `tests/corpus/`, with `make check-corpora`, and git told to keep their
+    bytes.
+  - **Test libraries:**
+    - `(jsonparse-testing machine)` runs either machine under any schedule
+      and records whole traces. Its list stack is the reference for slice
+      2's stack.
+    - `(jsonparse-testing yajl)` reads yajl's gold files.
+  - **Suites:**
+    - `conformance`, with every `n_` and `i_` answer pinned in
+      `tests/golden/jsontestsuite.txt`, which only `tests/write-golden.sps`
+      writes;
+    - `yajl`;
+    - `machine`, the in-house cases;
+    - `fuzz`;
+    - `machine-driver`;
+    - `generated`;
+    - `check-corpora`.
+- **Results:**
+  - Every `y_` is accepted and every `n_` rejected. Of the `i_` files, 11
+    are accepted (the number files and 500 nested arrays) and 24 rejected.
+  - Of yajl's 45 plain cases, all match the gold but five divergences,
+    listed with reasons (ADR-0012). Its four `am_` cases match with the
+    `mode` bit.
+  - The interpreter and the generated parser agree on whole traces
+    everywhere they run.
+- **Evidence:**
+  - `scripts/guix-env make test` runs 12 suites in about 30 s. The new ones
+    pass 9, 160, 367, 4, 50, 5 and 38.
+  - Every assertion was watched fail, and every mutant the review found
+    now fails a suite.
+- **Review:** an adversarial review found:
+  - the depth limit never reached after a close, so a close that reset it
+    to 512 passed every gate;
+  - five three-byte UTF-8 leads untested;
+  - fuzz inputs rarely split, and fuzz never setting the depth limit or the
+    `mode` bit;
+  - a differential blind to fields and state;
+  - yajl's option cases accepting an early rejection;
+  - symlinks allowed in a corpus;
+  - two records overstating the schedules.
+
+  All are fixed, each watched fail.
+- **Known:**
+  - **A truncated UTF-8 sequence is reported as `unexpected-eof`,** and so
+    are a dangling `\` or `\u` and a lone high surrogate at the end of
+    input.
+  - **Fuzz compares the driver with itself.** A bug in the driver's stack
+    is caught only by `machine-driver`'s hand-written traces.
+  - **The suites reach into byte-machine:**
+    - `machine` imports `(byte-machine private conditions)` to name a
+      refused field;
+    - the schedules come from byte-machine's test harness.
+
+    A byte-machine bump can move either.
 
 ### Slice 0: scaffolding (2026-10-30)
 
