@@ -25,6 +25,10 @@
 ;;;   2. on each of several inputs, jsonparse allocates at most the raw
 ;;;      baseline plus 64 bytes
 ;;;
+;;; Automatic collection is off inside every measured region: a collection
+;;; that falls in one allocates bookkeeping of its own (656 bytes seen in
+;;; tests/test-string-alloc.sps), and where it falls moves with the build.
+;;;
 ;;; The figures above are not pinned: another Chez build or byte-machine
 ;;; release may allocate differently. The baseline is only required to
 ;;; measure a parse, more than an empty measured region costs.
@@ -32,7 +36,7 @@
 ;;; A control: a handler that conses per null, stored where it cannot be
 ;;; dropped, must show the gap, or the measurement is blind.
 (import (except (rnrs) current-output-port)
-        (only (chezscheme) sstats-bytes statistics)
+        (only (chezscheme) collect-request-handler parameterize void sstats-bytes statistics)
         (only (byte-machine runtime) make-parser parser-feed! parser-finish!)
         (only (generated jsonparse) jsonparse-machine)
         (srfi :64)
@@ -97,13 +101,14 @@
 ;; measure : json-handler Bytevector Nat -> (List Nat json-result)
 ;; Bytes allocated by one feed and one finish, and the finish's result.
 (define (measure handler bv limit)
-  (let* ((p (make-json-parser handler #f (make-json-options 'depth-limit limit)))
-         (before (sstats-bytes (statistics)))
-         (fed (json-parser-feed! p bv))
-         (done (json-parser-finish! p))
-         (after (sstats-bytes (statistics))))
-    (list (- after before)
-          (list (json-result-status fed) (json-result-status done)))))
+  (let ((p (make-json-parser handler #f (make-json-options 'depth-limit limit))))
+    (parameterize ((collect-request-handler void))
+      (let* ((before (sstats-bytes (statistics)))
+             (fed (json-parser-feed! p bv))
+             (done (json-parser-finish! p))
+             (after (sstats-bytes (statistics))))
+        (list (- after before)
+              (list (json-result-status fed) (json-result-status done)))))))
 
 (define (allocated handler bv limit) (car (measure handler bv limit)))
 
@@ -116,6 +121,13 @@
         (let* ((s (allocated handler small limit))
                (l (allocated handler large limit)))
           (loop (+ k 1) (cons (- l s) acc))))))
+
+;; Where the heap stands before a region can move its count by 160 bytes
+;; either way, even with collection off: seen at 2 of 121 heap shifts
+;; (2026-10-30). A slope of one word per value, byte or container would be
+;; 8 bytes times a gap of thousands, so the noise is allowed for: a gap of
+;; 320 or less counts as 0.
+(define slope-noise 320)
 
 (define cases
   ;; (label small large depth-limit)
@@ -134,7 +146,8 @@
       (lambda (handler-label handler)
         (test-equal (string-append label ", " handler-label ": the large input allocates what the small one does")
           '(0 0 0)
-          (slope handler small large limit)))
+          (map (lambda (d) (if (<= (abs d) slope-noise) 0 d))
+               (slope handler small large limit))))
       '("all no-ops" "nothing bound")
       (list no-ops nothing))))
  cases)
@@ -152,13 +165,14 @@
 ;; measured as `measure` does, with only the stack's `context` callback bound
 ;; (it always answers 'array: the inputs below are arrays and scalars).
 (define (baseline bv limit)
-  (let* ((p (make-parser jsonparse-machine (list (list 'context (lambda (p s) 'array)))
-                         #f (list (cons 'depth-left limit))))
-         (before (sstats-bytes (statistics)))
-         (fed (parser-feed! p bv 0 (bytevector-length bv)))
-         (done (parser-finish! p))
-         (after (sstats-bytes (statistics))))
-    (- after before)))
+  (let ((p (make-parser jsonparse-machine (list (list 'context (lambda (p s) 'array)))
+                        #f (list (cons 'depth-left limit)))))
+    (parameterize ((collect-request-handler void))
+      (let* ((before (sstats-bytes (statistics)))
+             (fed (parser-feed! p bv 0 (bytevector-length bv)))
+             (done (parser-finish! p))
+             (after (sstats-bytes (statistics))))
+        (- after before)))))
 
 ;; The two json-result records, 32 bytes each.
 (define result-margin 64)
@@ -180,9 +194,10 @@
        (list "nested arrays" (nested-arrays 60000) 65535)))
 
 (define (empty-region)
-  (let* ((before (sstats-bytes (statistics)))
-         (after (sstats-bytes (statistics))))
-    (- after before)))
+  (parameterize ((collect-request-handler void))
+    (let* ((before (sstats-bytes (statistics)))
+           (after (sstats-bytes (statistics))))
+      (- after before))))
 
 (test-equal "baseline: byte-machine's own parser allocates more than an empty measured region"
   #t

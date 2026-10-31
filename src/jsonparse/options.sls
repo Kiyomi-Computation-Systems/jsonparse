@@ -12,22 +12,40 @@
 ;;; top-level scalar parses. 65535 is the most the machine's 16-bit field
 ;;; holds.
 ;;;
+;;; number-mode is how (jsonparse string) converts a number (ADR-0011):
+;;;
+;;;   flonum  the default. A number with no fraction and no exponent is an
+;;;           exact integer; any other is the nearest flonum
+;;;   exact   every number is exact: 1.5 is 3/2
+;;;   text    a json-number record holding the number's text
+;;;
+;;; digit-limit is how many digits a number may have in flonum and exact
+;;; modes, its fraction and exponent included: an exact integer from 1 to
+;;; the greatest fixnum, default 1000 (ADR-0011). The parser ignores both.
+;;;
 ;;; A bad option is a mistake in the calling code, not in the input, so it
 ;;; raises an R6RS assertion violation whose who is make-json-options.
 ;;;
-;;; The number mode, the digit limit, the value options and the stream
-;;; options join this record in their slices (ADR-0006, ADR-0011, ADR-0014).
+;;; The value options and the stream options join this record in their
+;;; slices (ADR-0006, ADR-0014).
 (library (jsonparse options)
-  (export make-json-options json-options? json-options-depth-limit)
+  (export make-json-options json-options? json-options-depth-limit
+          json-options-number-mode json-options-digit-limit)
   (import (rnrs))
 
   (define default-depth-limit 512)
   (define max-depth-limit 65535)
+  (define default-number-mode 'flonum)
+  (define default-digit-limit 1000)
 
   ;; json-options? : Any -> Boolean
   ;; json-options-depth-limit : json-options -> Nonnegative-Fixnum
+  ;; json-options-number-mode : json-options -> (U 'flonum 'exact 'text)
+  ;; json-options-digit-limit : json-options -> Positive-Fixnum
   (define-record-type (json-options new-json-options json-options?)
-    (fields (immutable depth-limit json-options-depth-limit))
+    (fields (immutable depth-limit json-options-depth-limit)
+            (immutable number-mode json-options-number-mode)
+            (immutable digit-limit json-options-digit-limit))
     (sealed #t)
     (opaque #t))
 
@@ -39,9 +57,12 @@
   ;; Raises for an unknown name, a name given twice, a name with no value,
   ;; and a value out of range.
   (define (make-json-options . args)
-    (let loop ((xs args) (seen '()) (depth-limit default-depth-limit))
+    (let loop ((xs args) (seen '())
+               (depth-limit default-depth-limit)
+               (number-mode default-number-mode)
+               (digit-limit default-digit-limit))
       (cond
-       ((null? xs) (new-json-options depth-limit))
+       ((null? xs) (new-json-options depth-limit number-mode digit-limit))
        ((null? (cdr xs)) (refuse "an option has no value" (car xs)))
        ((memq (car xs) seen) (refuse "an option is given twice" (car xs)))
        (else
@@ -50,5 +71,13 @@
             ((depth-limit)
              (unless (and (fixnum? value) (fx<=? 0 value max-depth-limit))
                (refuse "depth-limit is not an exact integer from 0 to 65535" value))
-             (loop rest (cons name seen) value))
+             (loop rest (cons name seen) value number-mode digit-limit))
+            ((number-mode)
+             (unless (memq value '(flonum exact text))
+               (refuse "number-mode is not flonum, exact or text" value))
+             (loop rest (cons name seen) depth-limit value digit-limit))
+            ((digit-limit)
+             (unless (and (fixnum? value) (fx>=? value 1))
+               (refuse "digit-limit is not an exact integer from 1 to the greatest fixnum" value))
+             (loop rest (cons name seen) depth-limit number-mode value))
             (else (refuse "unknown option" name)))))))))

@@ -75,10 +75,14 @@ rationals and flonums. Measured with Chez 10.4.0 on x86_64, 2026-10-30
 ## Consequences
 
 - **The worst case per byte has a bound.** At the default limit, a megabyte of
-  the longest numbers allowed converts in about 116 ms, about 6 times a tree
+  the longest integers allowed converts in about 116 ms, about 6 times a tree
   parse. Without a limit, one number can take minutes.
+  - **Measured again on Chez 10.4.1 (ADR-0016):** integers take 122 ms per
+    MB, as before. Long fractions take 354 ms, and the slowest shape found
+    takes 389 ms, about 20 times a tree parse. The owner kept the default
+    of 1,000 (2026-10-31).
 - **Tests pin the limit's boundary:** 1,000 digits are accepted and 1,001 are
-  refused, each watched fail. M1 measures the cost again on Chez 10.4.1.
+  refused, each watched fail.
 - **What each mode gives back:**
   - `text` gives back every number's exact text;
   - `exact` gives back every value;
