@@ -24,8 +24,9 @@ newest first.
 - **Slice 0, the scaffolding, is done** (close-out below).
 - **Slice 1 of M1, the grammar and the generator, is done** (close-out
   below).
-- **Slice 2, the push parser, is done** (close-out below). Slice 3,
-  `(jsonparse string)`, is next.
+- **Slice 2, the push parser, is done** (close-out below).
+- **Slice 3, the assembler, is done** (close-out below). Slice 4,
+  `(jsonparse tree)`, is next.
 
 ## Next
 
@@ -44,29 +45,26 @@ newest first.
    - It covers the internal stack, the options record and the depth limit
      (ADR-0004, ADR-0005), behind a handler of named procedures (ADR-0015).
    - Its results use jsonparse's own types (ADR-0010).
-3. **`(jsonparse string)`.**
-   - It assembles strings and numbers.
-   - It covers the three number modes and the digit limit, whose boundary
-     tests are watched fail (ADR-0011).
-   - **Its escapes arrive as scalar values.** The parser joins surrogate
-     pairs, so the assembler never holds half of one (ADR-0015).
-   - **It reports its limits by returning a stop** from the handler
-     procedure that finds them (ADR-0015).
-     - **The digit limit stops from `number-end`.** A stop from
-       `number-chars` lands wherever the feeds split the number. So it counts
-       digits in `number-chars`, copies at most the limit plus one, and
-       stops at the end.
-   - **It decodes text only after joining a text's parts.** A part may end
-     inside a UTF-8 character.
-   - **A parser reset doesn't reach the handler.** The assembler needs its
-     own reset, for a text left half-built.
+3. **`(jsonparse string)`** (done, close-out below): the assembler, the
+   number modes and the digit limit (ADR-0011, ADR-0016).
 4. **`(jsonparse tree)`,** with the value options (ADR-0006).
    - **Where its procedures call slice 3's,** they pass a stop on: test the
      returned value with `json-stop?` (ADR-0015).
+   - **One assembler per parser,** made from the same options record. Keys
+     come from `json-assembler-string!` in `key-end`, strings in
+     `string-end`, numbers from `json-assembler-number!` in `number-end`
+     (ADR-0016).
+   - **Its reset resets the assembler too.** A parser reset doesn't reach
+     the handler (ADR-0015).
+   - **`equal?` compares `json-number` records by identity.** Tree tests in
+     `text` mode compare numbers by `json-number-text`, until slice 6's
+     `json=?`.
 5. **`(jsonparse writer)`.**
    - It covers the refusals, number formatting and pretty printing (ADR-0007,
      ADR-0011).
    - Round-trip property tests check it.
+   - **A `json-number`'s text is valid JSON:** `make-json-number` checks it
+     and keeps a copy, and `json-number-text` returns a copy (ADR-0016).
 6. **`(jsonparse easy)`.**
    - It covers `&json-error` with character offsets.
    - The conformance vectors run through it.
@@ -91,6 +89,87 @@ newest first.
      pays that per record: measure it.
 
 ## Close-outs
+
+### Slice 3: the assembler (2026-10-30)
+
+- **Landed:**
+  - **`(jsonparse string)`:** the assembler, with one growable buffer
+    reused for every key, string and number (ADR-0016):
+    - a string's parts and escapes are joined as UTF-8 and decoded once, by
+      `utf8->string`;
+    - a number's digits are counted as its parts arrive, and nothing past
+      the limit is kept;
+    - numbers convert by mode at `number-end`, and `number-too-long` and
+      `number-out-of-range` come back as stops;
+    - the `json-number` record, checked against JSON's number grammar.
+  - **`(jsonparse options)`:** `number-mode` (`flonum`, `exact` or `text`)
+    and `digit-limit` (default 1,000).
+  - **`(jsonparse-testing string)`:** `run-assembler`, which records each
+    value the assembler builds through a parser.
+  - **Suites:**
+    - `string`: a differential against the reference's trace and against
+      yajl's gold, plus pinned cases, the API, buffer growth and refusals;
+    - `string-alloc`: no slope, a string's cost, growth, long numbers and
+      retention;
+    - `number`: an oracle built from the digits in all three modes,
+      ADR-0011's pinned values, the limit's boundary in every position,
+      `exact` mode's range, stops under every schedule, a grammar
+      differential, and the options.
+  - **Records:** ADR-0016, ADR-0011's worst case corrected, and
+    `docs/string.md`.
+- **Results:**
+  - **Strings:** the assembled strings and keys equal the reference's on
+    all 376 corpus files: whole, in chunks, under every split into two
+    feeds of the 353 files of at most 64 bytes, and random schedules for
+    the rest. They also equal yajl's own decoding, on all its cases but the
+    five where slice 1 found our parser differs.
+  - **Numbers:**
+    - every number in the corpus, and seeded generated ones, equals the
+      digits oracle in all three modes;
+    - 1,000 digits are accepted and 1,001 refused, in every position;
+    - a stop lands at the same offset under every schedule;
+    - `make-json-number` accepts exactly what the parser accepts, over
+      every string of up to 4 characters from `-+.eE019/:`.
+  - **Measurements:**
+    - joining and decoding once with `utf8->string` builds strings at
+      300–900 MB/s, 2–4 times faster than decoding in Scheme;
+    - at the default limit, numbers of 1,000 digits convert at 122 ms per
+      MB as integers, and 354–389 ms as fractions.
+- **Evidence:**
+  - `scripts/guix-env make test` runs 20 suites in about 34 s. The new ones
+    pass 203, 25 and 77.
+  - Every assertion was watched fail. The builders ran about 140 mutants,
+    and the reviewer 49 more.
+- **Review:** an adversarial review found no wrong value. It found:
+  - the doc's example broken by any document with a key;
+  - an allocation assertion that failed for about 6% of heap phases, since
+    a collection inside a measured region adds 656 bytes;
+  - a 1-byte escape at a buffer growth point untested;
+  - the assembler's default options untested;
+  - two live assemblers never interleaved;
+  - `/` and `:`, the bytes either side of the digits, untested in the
+    grammar;
+  - retention invisible to the allocation suite, and a start-size assertion
+    that couldn't fail;
+  - smaller gaps in wording.
+
+  All are fixed, each watched fail. The allocation suites, `parser-alloc`
+  too, now measure with collection off, and pass under 121 heap shifts.
+  My own check then found a leak of each string's copied bytes that the
+  first retention fix missed. A memory-in-use check now catches it.
+- **Known:**
+  - **ADR-0011's worst case was three times too low.** At the default
+    limit, long fractions convert at 354–389 ms per MB, about 20 times a
+    tree parse. The limit still bounds it, and the owner kept it at 1,000
+    (2026-10-31).
+  - **The buffer keeps its largest size** for the assembler's life.
+  - **Some behaviour leans on Chez, where R6RS leaves it open:**
+    `string->number`'s infinities, `-0.0` and rounding, and `utf8->string`'s
+    U+FFFD (ADR-0016).
+  - **No suite runs the docs' examples.** They were run by hand.
+  - **The allocation suites allow for heap-position noise:**
+    - `parser-alloc` counts a slope gap of 320 bytes or less as 0;
+    - `string-alloc` allows 512 bytes plus 1% over its baseline.
 
 ### Slice 2: the push parser (2026-10-30)
 

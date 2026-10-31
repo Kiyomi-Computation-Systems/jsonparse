@@ -101,5 +101,7 @@ with.
 
 - `depth-limit`: how many objects and arrays may be open at once, from 0 to
   65535. The default is 512. Going deeper is the error `nesting-too-deep`.
+- `number-mode` and `digit-limit` are for the assembler, and the parser
+  ignores them: see [string.md](string.md).
 
 A bad option raises an assertion violation when the options are made.

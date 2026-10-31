@@ -83,6 +83,21 @@ record disagree, the record wins and this file gets fixed.
 - **Options are one record,** checked when it is made. A bad one raises an
   R6RS assertion violation (ADR-0015).
 
+## The assembler
+
+- **One assembler per parser,** with one growable buffer reused for every
+  key, string and number (ADR-0010, ADR-0016).
+- **A string's parts are decoded once, after they are joined** (ADR-0015,
+  ADR-0016).
+- **The digit limit and the range checks stop from `number-end`:**
+  `number-too-long`, and `number-out-of-range` for a flonum too large or an
+  `exact` value past the limit (ADR-0011, ADR-0015, ADR-0016).
+- **A number's text is checked against JSON's grammar before it converts.**
+  A `json-number` record keeps a copy of its text and gives out copies
+  (ADR-0016).
+- **Taking a value empties the assembler.** A parser reset doesn't reach
+  it (ADR-0015, ADR-0016).
+
 ## Values
 
 - **Objects** are alists in document order by default. The hashtable option
