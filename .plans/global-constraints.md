@@ -75,6 +75,13 @@ record disagree, the record wins and this file gets fixed.
   container** (ADR-0004, plan M1).
 - **The depth limit is set per parser, default 512.** Going past it is
   `nesting-too-deep` (ADR-0005).
+- **A handler is fourteen named procedures, all optional** (ADR-0015):
+  - `escape` receives a scalar value, a surrogate pair joined;
+  - no text part is empty;
+  - a return value is ignored unless it is a stop, which ends the parse
+    with its code.
+- **Options are one record,** checked when it is made. A bad one raises an
+  R6RS assertion violation (ADR-0015).
 
 ## Values
 
