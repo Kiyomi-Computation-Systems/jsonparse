@@ -126,7 +126,9 @@ The parser alone takes 2 to 6 ms per MB of the same input.
 ## Consequences
 
 - **A string allocates its result and one copy of its bytes.** The buffer
-  grows only past the largest text seen so far.
+  grows only past the largest text seen so far. A string that starts with
+  U+FEFF allocates a copy one byte longer, a string one character longer,
+  and the string cut from it.
 - **The buffer keeps its largest size for the assembler's life.** One huge
   string keeps that much memory alive until the assembler is dropped.
 - **`text` mode keeps every byte of a number,** so a huge number costs its
@@ -145,6 +147,11 @@ The parser alone takes 2 to 6 ms per MB of the same input.
   - **Chez's `utf8->string` turns bytes that aren't UTF-8 into U+FFFD.**
     R6RS doesn't say what it does with them. Only an assembler fed by hand
     can hold such bytes.
+  - **Chez's `utf8->string` drops a byte order mark, U+FEFF, that comes
+    first.** In JSON it is text. Slice 5's round trips found a string or key
+    starting with one read back without it, raw or escaped. Since then
+    (2026-11-06), a text that starts with one is decoded after a space, and
+    the space cut off.
 - **M3:**
   - **An integer fast path** could convert plain numbers without a string.
   - **Most of the per-number cost** is the copy, the string and

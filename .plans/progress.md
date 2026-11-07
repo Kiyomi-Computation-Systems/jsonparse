@@ -26,8 +26,9 @@ newest first.
   below).
 - **Slice 2, the push parser, is done** (close-out below).
 - **Slice 3, the assembler, is done** (close-out below).
-- **Slice 4, the tree builder, is done** (close-out below). Slice 5,
-  `(jsonparse writer)`, is next.
+- **Slice 4, the tree builder, is done** (close-out below).
+- **Slice 5, the writer, is done** (close-out below). Slice 6,
+  `(jsonparse easy)`, is next.
 
 ## Next
 
@@ -50,19 +51,21 @@ newest first.
    number modes and the digit limit (ADR-0011, ADR-0016).
 4. **`(jsonparse tree)`** (done, close-out below): the builder and the
    `object-mode` and `null` options (ADR-0006, ADR-0017).
-5. **`(jsonparse writer)`.**
-   - It covers the refusals, number formatting and pretty printing (ADR-0007,
-     ADR-0011).
-   - Round-trip property tests check it.
-   - **A `json-number`'s text is valid JSON:** `make-json-number` checks it
-     and keeps a copy, and `json-number-text` returns a copy (ADR-0016).
-   - **`null` is a symbol or a non-opaque record,** never `'()`, under any
-     options, so the writer can take alists and hashtables both as
-     objects (ADR-0017). It recognises the null in force by `eq?`.
-   - **A round trip needs the reader's options:** `null` and `object-mode`
-     as well as the number mode.
+5. **`(jsonparse writer)`** (done, close-out below): `put-json`,
+   `&json-error` and the `indent` option (ADR-0018).
 6. **`(jsonparse easy)`.**
    - It covers `&json-error` with character offsets.
+     - `&json-error` is in `(jsonparse error)`, with a reason and an
+       offset; easy re-exports it (ADR-0018).
+     - A writer refusal's offset is `#f`.
+   - **`json->string` and `json->bytevector` compose `put-json`** with a
+     bytevector output port.
+     - Its output never starts with U+FEFF, since a document starts with
+       `"`, `{`, `[`, a digit, `-` or a letter.
+     - Never decode text that may start with U+FEFF with Chez's
+       `utf8->string`: it drops the mark (ADR-0016).
+   - **`string->json`'s offsets count characters.** A character of 2 to 4
+     UTF-8 bytes moves the byte offset further than the character offset.
    - **`json=?` must compare hashtables by their members, and `json-number`
      records by text** (ADR-0006, ADR-0017). `canonical` in
      `(jsonparse-testing tree)` does both for the tests.
@@ -90,8 +93,96 @@ newest first.
        the value, measured in `test-tree-alloc` (2026-11-06).
    - **A builder keeps its value until it is reset** (ADR-0017). Reset it
      once each record's value is taken.
+   - **Records written as `lines` go through `put-json` at `indent` 0,**
+     then a `\n`. A refused value raises before any byte of its record
+     is written (ADR-0018).
 
 ## Close-outs
+
+### Slice 5: the writer (2026-11-06)
+
+- **Landed:**
+  - **`(jsonparse writer)`:** `put-json`, which writes a value as UTF-8 to
+    a binary port (ADR-0018):
+    - it writes what the builder builds, under any options: alists and
+      hashtables, a hashtable's members in key order;
+    - numbers follow ADR-0011, a fixnum's digits written directly;
+    - a value is checked whole before a byte is written, so a refusal
+      leaves the port as it was;
+    - refusals raise `&json-error` with a reason: `unwritable-number`,
+      `unwritable-key`, `unwritable-value` or `nesting-too-deep`.
+  - **`(jsonparse error)`:** `&json-error`, an `&error` with a reason and
+    an offset, below the easy layer.
+  - **`(jsonparse options)`:** `indent`, from 0 (compact, the default) to
+    10.
+  - **A fix in `(jsonparse string)`:** Chez's `utf8->string` drops a
+    leading U+FEFF, so a string or key starting with one, raw or escaped,
+    read back without it. `json-assembler-string!` now keeps it
+    (ADR-0016).
+  - **Suites:**
+    - `writer`: hand-written outputs for every kind of value, every
+      control character, numbers at every digit boundary, hashtable order,
+      layout, every refusal with nothing left on the port, the arguments
+      and the `indent` option;
+    - `writer-property`: round trips through the builder under seven
+      option sets, ADR-0011's number property, the corpus as a fixed
+      point, and layouts that change nothing;
+    - `string` and `string-alloc` gain the U+FEFF cases.
+  - **Records:** ADR-0018, a note in ADR-0016, and `docs/writer.md`.
+- **Results:**
+  - **Round trips:** 3,000 generated trees under each of seven option
+    sets read back as expected, worked out from the tree alone. ADR-0011's
+    property holds:
+    - 12,000 exact numbers in `exact` mode;
+    - 20,000 flonums in `flonum` mode, subnormals and `-0.0` included;
+    - 12,000 `json-number` texts in `text` mode.
+  - **The corpus is a fixed point:** every file the builder accepts reads,
+    writes and reads back to the same tree, and writes the same bytes
+    again, under four option sets.
+  - **Chez's flonum printer** gives JSON for every finite flonum once its
+    `|` suffix is cut. Every one reads back `eqv?`, over a million random
+    bit patterns in the review's run.
+  - **Measurements** (ADR-0018):
+    - writing is 2 to 3 times faster than reading, but for flonums, at
+      about 36 ms per MB;
+    - the check pass costs 0.2 to 0.9 ms per MB.
+- **Evidence:**
+  - `scripts/guix-env make test` runs 25 suites in about 45 s. The new ones
+    pass 568 and 27, and `string` and `string-alloc` now pass 207 and 27.
+  - Every assertion was watched fail. The builders ran about 500 mutants,
+    and the reviewer 106. Of the reviewer's, 97 failed a suite at once.
+    Its findings added a test for one more. The other eight can't change
+    the output.
+- **Review:** an adversarial review found no wrong output. It found:
+  - the global constraints saying both that the low layer never raises on
+    bad input and that the writer raises;
+  - a hashtable not keyed by `string=?` writing two keys with the same
+    text in an order that changed from run to run;
+  - `indent` unbounded, so one option could ask for 2^60 spaces;
+  - `put-fixnum`'s buffer assuming 64-bit fixnums;
+  - the round-trip claim missing the reader's range, as for a
+    `json-number` `1e400`;
+  - tests expecting `#f` from something that can raise;
+  - a string-allocation claim made false by the U+FEFF fix, with a
+    mutant changing only allocation;
+  - a reason in ADR-0018 its own table contradicted, dates a day ahead,
+    and a test header overstating its independence.
+
+  All are fixed, each fix watched fail:
+  - a table holding two keys with the same text is refused;
+  - `indent` is capped at 10;
+  - the buffer is sized from `(greatest-fixnum)`.
+- **Known:**
+  - **The writer doesn't apply the reader's digit limit or range.** A
+    number past either is written, and a reader in `flonum` or `exact`
+    mode refuses it. At a small digit limit, reading, writing and reading
+    again may not be a fixed point (ADR-0018).
+  - **A flonum's text comes from Chez's `number->string`,** in the writer
+    and in the tests' expectations alike. Only the `eqv?` round trip
+    checks it.
+  - **A laid-out value grows with the square of its depth.**
+  - **Chez's `utf8->string` drops a leading U+FEFF.** The assembler works
+    around it; any new caller of `utf8->string` must too.
 
 ### Slice 4: the tree builder (2026-11-06)
 

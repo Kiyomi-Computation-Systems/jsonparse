@@ -161,6 +161,32 @@
          #t (>= cost (* 4 n))))))
  '(100 1000 100000))
 
+;; A text that starts with U+FEFF is decoded after a space, since Chez's
+;; utf8->string drops the mark, and that costs a longer copy and a cut.
+;; Only the mark pays it: U+FEFE shares its first two bytes, EF BB, and
+;; costs what U+FEBF, EF BA BF, does. Each text is 30 bytes and 28
+;; characters. Measured on 2026-11-06: 336 bytes for both, 480 with the
+;; mark, the same at six heap shifts.
+(let* ((text (lambda (b1 b2 b3)
+               (let ((bv (repeat-bytes 30 97)))
+                 (bytevector-u8-set! bv 0 b1)
+                 (bytevector-u8-set! bv 1 b2)
+                 (bytevector-u8-set! bv 2 b3)
+                 bv)))
+       (near (text #xEF #xBB #xBE))
+       (other (text #xEF #xBA #xBF))
+       (mark (text #xEF #xBB #xBF))
+       (a (make-json-assembler)))
+  (for-each (lambda (bv) (assemble! a bv) (assemble! a bv)) (list near other mark))
+  (let* ((near-cost (allocated (lambda () (assemble! a near))))
+         (other-cost (allocated (lambda () (assemble! a other))))
+         (mark-cost (allocated (lambda () (assemble! a mark)))))
+    (show "U+FEFF: near " near-cost ", other " other-cost ", mark " mark-cost)
+    (test-equal "U+FEFF: a text starting U+FEFE costs what one starting U+FEBF does"
+      other-cost near-cost)
+    (test-equal "U+FEFF: a text starting with the mark costs more, so the measure sees the cut"
+      #t (> mark-cost other-cost))))
+
 ;; --- 3. growth happens once ---------------------------------------------------------------
 
 (define text-100k (repeat-bytes 100000 97))

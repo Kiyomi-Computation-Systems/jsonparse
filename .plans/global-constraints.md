@@ -52,7 +52,9 @@ record disagree, the record wins and this file gets fixed.
 - **The low layer** is `(jsonparse parser)`, `(jsonparse string)`,
   `(jsonparse tree)`, `(jsonparse writer)`, `(jsonparse sequence)` and their
   supporting libraries. It takes bytes, counts offsets in bytes, and never
-  raises on bad input (ADR-0010, ADR-0014).
+  raises on bad input (ADR-0010, ADR-0014). The writer takes values, not
+  bytes: it raises `&json-error` on a value that JSON can't express
+  (ADR-0018).
 - **`(jsonparse easy)` composes low-layer exports only:** it imports only
   `(rnrs …)` and `(jsonparse …)` libraries, and `tests/check-imports.sps`
   holds that. It raises
@@ -130,6 +132,20 @@ record disagree, the record wins and this file gets fixed.
 - **The writer refuses what JSON can't express** (ADR-0007). It strips the
   `|` mantissa width from flonums, and refuses exact fractions with no finite
   decimal (ADR-0011).
+
+## The writer
+
+- **`put-json` writes UTF-8 to a binary port,** and takes alists and
+  hashtables under any options. It reads `null`, `depth-limit` and `indent`
+  only (ADR-0018).
+- **A value is checked whole before a byte is written.** A refusal raises a
+  `&json-error` whose offset is `#f`, and leaves the port as it was
+  (ADR-0018).
+- **The same value always gives the same bytes:** a hashtable's members go
+  in key order, and a table holding two keys with the same text is refused
+  (ADR-0018).
+- **`&json-error` is an `&error` with a reason and an offset,** defined in
+  `(jsonparse error)` below the easy layer (ADR-0010, ADR-0018).
 
 ## Streams of values
 

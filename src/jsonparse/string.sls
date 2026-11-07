@@ -61,6 +61,8 @@
 ;;; Unicode scalar value raises. A string's bytes that are not UTF-8 are
 ;;; left to utf8->string, which in Chez decodes them to U+FFFD; R6RS
 ;;; doesn't say. A parser never delivers such bytes in a completed string.
+;;; Chez's utf8->string also drops a byte order mark, U+FEFF, at the start
+;;; of its bytes; json-assembler-string! keeps it, since in JSON it is text.
 ;;;
 ;;; make-json-number checks its text against the same grammar and keeps a
 ;;; copy, and json-number-text returns a copy, so a record's text cannot be
@@ -257,12 +259,36 @@
               (put! 3 (tail 0))))
       (assembler-fill-set! a (fx+ i n))))
 
+  ;; Whether the text starts with EF BB BF, U+FEFF's UTF-8.
+  (define (mark-first? a)
+    (let ((buf (assembler-buffer a)))
+      (and (fx>=? (assembler-fill a) 3)
+           (fx=? (bytevector-u8-ref buf 0) #xEF)
+           (fx=? (bytevector-u8-ref buf 1) #xBB)
+           (fx=? (bytevector-u8-ref buf 2) #xBF))))
+
+  ;; take-after-space! : json-assembler -> Bytevector
+  ;; take!, with a space before the text.
+  (define (take-after-space! a)
+    (let* ((n (assembler-fill a))
+           (out (make-bytevector (fx+ n 1) 32)))
+      (bytevector-copy! (assembler-buffer a) 0 out 1 n)
+      (clear! a)
+      out))
+
   ;; json-assembler-string! : json-assembler -> String
   ;; The string the parts so far make, and the assembler emptied. With no
   ;; parts, the empty string.
+  ;;
+  ;; Chez's utf8->string drops a byte order mark, U+FEFF, that comes first,
+  ;; and R6RS doesn't say whether it may. In JSON it is text, so a text that
+  ;; starts with one is decoded after a space, and the space cut off.
   (define (json-assembler-string! a)
     (check-assembler 'json-assembler-string! a)
-    (utf8->string (take! a)))
+    (if (mark-first? a)
+        (let ((s (utf8->string (take-after-space! a))))
+          (substring s 1 (string-length s)))
+        (utf8->string (take! a))))
 
   ;; json-assembler-number-chars! : json-assembler Bytevector Nonnegative-Fixnum Nonnegative-Fixnum -> Void
   ;; Adds the bytes of BV from START to END to a number's text. In flonum
