@@ -25,8 +25,9 @@ newest first.
 - **Slice 1 of M1, the grammar and the generator, is done** (close-out
   below).
 - **Slice 2, the push parser, is done** (close-out below).
-- **Slice 3, the assembler, is done** (close-out below). Slice 4,
-  `(jsonparse tree)`, is next.
+- **Slice 3, the assembler, is done** (close-out below).
+- **Slice 4, the tree builder, is done** (close-out below). Slice 5,
+  `(jsonparse writer)`, is next.
 
 ## Next
 
@@ -47,26 +48,24 @@ newest first.
    - Its results use jsonparse's own types (ADR-0010).
 3. **`(jsonparse string)`** (done, close-out below): the assembler, the
    number modes and the digit limit (ADR-0011, ADR-0016).
-4. **`(jsonparse tree)`,** with the value options (ADR-0006).
-   - **Where its procedures call slice 3's,** they pass a stop on: test the
-     returned value with `json-stop?` (ADR-0015).
-   - **One assembler per parser,** made from the same options record. Keys
-     come from `json-assembler-string!` in `key-end`, strings in
-     `string-end`, numbers from `json-assembler-number!` in `number-end`
-     (ADR-0016).
-   - **Its reset resets the assembler too.** A parser reset doesn't reach
-     the handler (ADR-0015).
-   - **`equal?` compares `json-number` records by identity.** Tree tests in
-     `text` mode compare numbers by `json-number-text`, until slice 6's
-     `json=?`.
+4. **`(jsonparse tree)`** (done, close-out below): the builder and the
+   `object-mode` and `null` options (ADR-0006, ADR-0017).
 5. **`(jsonparse writer)`.**
    - It covers the refusals, number formatting and pretty printing (ADR-0007,
      ADR-0011).
    - Round-trip property tests check it.
    - **A `json-number`'s text is valid JSON:** `make-json-number` checks it
      and keeps a copy, and `json-number-text` returns a copy (ADR-0016).
+   - **`null` is a symbol or a non-opaque record,** never `'()`, under any
+     options, so the writer can take alists and hashtables both as
+     objects (ADR-0017). It recognises the null in force by `eq?`.
+   - **A round trip needs the reader's options:** `null` and `object-mode`
+     as well as the number mode.
 6. **`(jsonparse easy)`.**
    - It covers `&json-error` with character offsets.
+   - **`json=?` must compare hashtables by their members, and `json-number`
+     records by text** (ADR-0006, ADR-0017). `canonical` in
+     `(jsonparse-testing tree)` does both for the tests.
    - The conformance vectors run through it.
    - The import check refuses any `src/` library that imports it (ADR-0010).
 7. **`(jsonparse sequence)`** and its easy-layer procedures (ADR-0014).
@@ -87,8 +86,98 @@ newest first.
    - **A parser allocates a fixed amount per feed,** mostly byte-machine's
      own result (ADR-0015). A reader that feeds and resets once per record
      pays that per record: measure it.
+     - A builder's reset, feed and finish allocate about 976 bytes beside
+       the value, measured in `test-tree-alloc` (2026-11-06).
+   - **A builder keeps its value until it is reset** (ADR-0017). Reset it
+     once each record's value is taken.
 
 ## Close-outs
+
+### Slice 4: the tree builder (2026-11-06)
+
+- **Landed:**
+  - **`(jsonparse tree)`:** the builder, one record holding a parser, an
+    assembler and a stack of values (ADR-0017):
+    - feed and finish return the parser's own results;
+    - each container is built once, at its end, from the stack's slots,
+      and each slot is cleared as its value moves into a container;
+    - the value is ready once finish answers `finished`, and the builder
+      keeps it until a reset;
+    - an error drops what was built at once, and a reset resets the
+      parser and the assembler too.
+  - **`(jsonparse options)`:**
+    - `object-mode`, `alist` or `hashtable`;
+    - `null`, a symbol or a record that isn't a hashtable, default the
+      symbol `null`.
+  - **`(jsonparse-testing tree)`:**
+    - `run-builder`;
+    - `reference-run`, which folds `run-assembler`'s trace by recursive
+      descent;
+    - `canonical` and `as-hashtables`, for comparing hashtables and
+      `json-number` records.
+  - **Suites:**
+    - `tree`: a differential against the reference, pinned values, the
+      stack's growth points, depth to 65,535, stops, and chunking;
+    - `tree-api`: the options, the lifecycle, independent builders,
+      defaults, refusals, results and sub-ranges;
+    - `tree-alloc`: what a parse allocates, the stack's growth, and what a
+      builder keeps alive.
+  - **Records:** ADR-0017 and `docs/tree.md`.
+- **Results:**
+  - **The builder builds what the reference does** on all 376 corpus
+    files, under five sets of options:
+    - whole, in chunks, under every split into two feeds of the files of
+      at most 64 bytes, and random schedules for the rest;
+    - 27,985 runs of 5,597 schedules, ending in values and in every
+      error and stop.
+  - **Containers at the stack's growth points:**
+    - arrays and objects whose slot counts land on 64, 128 and 256, and
+      one either side, at the top and nested;
+    - nesting to 65,535 levels.
+  - **Measurements** (ADR-0017):
+    - a tree costs 1 to 10 ms per MB more than assembling its strings and
+      numbers;
+    - a reused builder allocates for an array of literals only its
+      vector, plus a fixed amount, a fifth of a design that keeps members
+      in lists.
+- **Evidence:**
+  - `scripts/guix-env make test` runs 23 suites in about 40 s. The new
+    ones pass 150, 1,036 and 275.
+  - Every assertion was watched fail. The builders ran about 150 mutants,
+    and the reviewer 80. Of the reviewer's, 74 fail a suite. The other six
+    are equivalent to the library: each changes something no later step
+    reads.
+- **Review:** an adversarial review found no wrong value. It found:
+  - an option reset by a later `depth-limit` or `digit-limit` unseen,
+    since the differential gives both sides the same options record;
+  - keys that differ only in case never tested under hashtables, so a
+    case-blind table passed;
+  - a slot left uncleared by a container's close unseen, since the
+    retention baseline was taken after the same document;
+  - an error after a complete root, such as trailing garbage, never
+    checked for memory held;
+  - hashtable allocation bounded only from below, "doubling" not held by
+    its bounds, and the initial 64 slots untested;
+  - tests that expected `#f` from something that can raise, and helpers
+    that swallowed any raise;
+  - an opaque record of the caller's own refused as `null` without the doc
+    saying so, and the other kinds Chez's `record?` accepts unrecorded.
+
+  All are fixed, each watched fail. The resetting of the mark on an error
+  was dead code, found by a builder's equivalent mutant, and is gone.
+- **Known:**
+  - **Under hashtables the last duplicate always wins.** M1 has no other
+    rule (ADR-0017).
+  - **`null` is a symbol or a non-opaque record,** a list of what is
+    allowed. The owner kept it (2026-11-06), over refusing only what
+    collides. Which values it accepts depends on the implementation's
+    `record?`: Chez accepts conditions, enum-sets, record-type descriptors
+    and time objects.
+  - **The stack keeps its largest size** for the builder's life, like the
+    assembler's buffer.
+  - **The differential can't see a wrong options record,** since the
+    builder and the reference read the same one. The `tree-api` suite's
+    hand-written tables hold the options.
 
 ### Slice 3: the assembler (2026-10-30)
 

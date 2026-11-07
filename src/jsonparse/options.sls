@@ -26,26 +26,44 @@
 ;;; A bad option is a mistake in the calling code, not in the input, so it
 ;;; raises an R6RS assertion violation whose who is make-json-options.
 ;;;
-;;; The value options and the stream options join this record in their
-;;; slices (ADR-0006, ADR-0014).
+;;; object-mode is how (jsonparse tree) builds an object (ADR-0006):
+;;;
+;;;   alist      the default. An alist of (key . value) pairs in document
+;;;              order, every duplicate kept
+;;;   hashtable  an R6RS hashtable keyed by string; the last duplicate wins
+;;;
+;;; null is what (jsonparse tree) builds for null: a symbol, default the
+;;; symbol null, or a record (R6RS record?) that is not a hashtable
+;;; (ADR-0017). Anything else is refused, '() included, so null can't be
+;;; taken for another value under any options. A json-number is opaque, so
+;;; record? refuses it, and so it refuses any opaque record.
+;;;
+;;; The stream options join this record in their slice (ADR-0014).
 (library (jsonparse options)
   (export make-json-options json-options? json-options-depth-limit
-          json-options-number-mode json-options-digit-limit)
+          json-options-number-mode json-options-digit-limit
+          json-options-object-mode json-options-null)
   (import (rnrs))
 
   (define default-depth-limit 512)
   (define max-depth-limit 65535)
   (define default-number-mode 'flonum)
   (define default-digit-limit 1000)
+  (define default-object-mode 'alist)
+  (define default-null 'null)
 
   ;; json-options? : Any -> Boolean
   ;; json-options-depth-limit : json-options -> Nonnegative-Fixnum
   ;; json-options-number-mode : json-options -> (U 'flonum 'exact 'text)
   ;; json-options-digit-limit : json-options -> Positive-Fixnum
+  ;; json-options-object-mode : json-options -> (U 'alist 'hashtable)
+  ;; json-options-null : json-options -> (U Symbol Record)
   (define-record-type (json-options new-json-options json-options?)
     (fields (immutable depth-limit json-options-depth-limit)
             (immutable number-mode json-options-number-mode)
-            (immutable digit-limit json-options-digit-limit))
+            (immutable digit-limit json-options-digit-limit)
+            (immutable object-mode json-options-object-mode)
+            (immutable null json-options-null))
     (sealed #t)
     (opaque #t))
 
@@ -60,24 +78,36 @@
     (let loop ((xs args) (seen '())
                (depth-limit default-depth-limit)
                (number-mode default-number-mode)
-               (digit-limit default-digit-limit))
+               (digit-limit default-digit-limit)
+               (object-mode default-object-mode)
+               (null default-null))
       (cond
-       ((null? xs) (new-json-options depth-limit number-mode digit-limit))
+       ((null? xs) (new-json-options depth-limit number-mode digit-limit object-mode null))
        ((null? (cdr xs)) (refuse "an option has no value" (car xs)))
        ((memq (car xs) seen) (refuse "an option is given twice" (car xs)))
        (else
         (let ((name (car xs)) (value (cadr xs)) (rest (cddr xs)))
+          (define (next . changed)
+            (apply loop rest (cons name seen) changed))
           (case name
             ((depth-limit)
              (unless (and (fixnum? value) (fx<=? 0 value max-depth-limit))
                (refuse "depth-limit is not an exact integer from 0 to 65535" value))
-             (loop rest (cons name seen) value number-mode digit-limit))
+             (next value number-mode digit-limit object-mode null))
             ((number-mode)
              (unless (memq value '(flonum exact text))
                (refuse "number-mode is not flonum, exact or text" value))
-             (loop rest (cons name seen) depth-limit value digit-limit))
+             (next depth-limit value digit-limit object-mode null))
             ((digit-limit)
              (unless (and (fixnum? value) (fx>=? value 1))
                (refuse "digit-limit is not an exact integer from 1 to the greatest fixnum" value))
-             (loop rest (cons name seen) depth-limit number-mode value))
+             (next depth-limit number-mode value object-mode null))
+            ((object-mode)
+             (unless (memq value '(alist hashtable))
+               (refuse "object-mode is not alist or hashtable" value))
+             (next depth-limit number-mode digit-limit value null))
+            ((null)
+             (unless (or (symbol? value) (and (record? value) (not (hashtable? value))))
+               (refuse "null is not a symbol, or a record that is not a hashtable" value))
+             (next depth-limit number-mode digit-limit object-mode value))
             (else (refuse "unknown option" name)))))))))

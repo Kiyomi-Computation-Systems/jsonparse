@@ -98,14 +98,28 @@ record disagree, the record wins and this file gets fixed.
 - **Taking a value empties the assembler.** A parser reset doesn't reach
   it (ADR-0015, ADR-0016).
 
+## The tree builder
+
+- **One builder holds one parser, one assembler and one stack,** made from
+  one options record. Its feed and finish return the parser's results
+  (ADR-0017).
+- **Each container is built once, at its end,** from the stack's slots, and
+  a slot is cleared as its value moves into a container (ADR-0017).
+- **The value is ready once finish answers `finished`,** and the builder
+  keeps it until a reset. An error drops what was built at once, and a
+  reset resets the parser and the assembler too (ADR-0015, ADR-0017).
+
 ## Values
 
 - **Objects** are alists in document order by default. The hashtable option
-  keys by string, and the last duplicate wins by default (ADR-0006).
+  keys by string, and the last duplicate wins (ADR-0006). M1 has no other
+  rule for duplicates (ADR-0017).
 - **Other values:** arrays are vectors, keys and strings are strings, `true`
   and `false` are `#t` and `#f` (ADR-0006).
 - **`null`** is the symbol `null` by default, and configurable. A value that
-  collides with another representation is refused (ADR-0006).
+  collides with another representation is refused (ADR-0006): `null` is a
+  symbol, or a record that is not a hashtable. `record?` decides what is a
+  record, so an opaque one is refused (ADR-0017).
 - **Numbers:**
   - they convert by mode: `flonum` by default, `exact`, or `text`;
   - in `flonum` mode, integers are exact, and `1e400` is
