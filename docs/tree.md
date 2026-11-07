@@ -1,7 +1,9 @@
 # Building values: `(jsonparse tree)`
 
 A builder turns JSON bytes into Scheme values. Feed it the bytes in pieces
-of any size, finish it when the input ends, and take the value.
+of any size, finish it when the input ends, and take the value. For a
+whole document in a string, a bytevector or a port, [easy.md](easy.md) is
+shorter.
 
 ## In one minute
 

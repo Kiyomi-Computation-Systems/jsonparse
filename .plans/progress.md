@@ -27,8 +27,9 @@ newest first.
 - **Slice 2, the push parser, is done** (close-out below).
 - **Slice 3, the assembler, is done** (close-out below).
 - **Slice 4, the tree builder, is done** (close-out below).
-- **Slice 5, the writer, is done** (close-out below). Slice 6,
-  `(jsonparse easy)`, is next.
+- **Slice 5, the writer, is done** (close-out below).
+- **Slice 6, the easy layer, is done** (close-out below). Slice 7,
+  `(jsonparse sequence)`, is next.
 
 ## Next
 
@@ -53,24 +54,9 @@ newest first.
    `object-mode` and `null` options (ADR-0006, ADR-0017).
 5. **`(jsonparse writer)`** (done, close-out below): `put-json`,
    `&json-error` and the `indent` option (ADR-0018).
-6. **`(jsonparse easy)`.**
-   - It covers `&json-error` with character offsets.
-     - `&json-error` is in `(jsonparse error)`, with a reason and an
-       offset; easy re-exports it (ADR-0018).
-     - A writer refusal's offset is `#f`.
-   - **`json->string` and `json->bytevector` compose `put-json`** with a
-     bytevector output port.
-     - Its output never starts with U+FEFF, since a document starts with
-       `"`, `{`, `[`, a digit, `-` or a letter.
-     - Never decode text that may start with U+FEFF with Chez's
-       `utf8->string`: it drops the mark (ADR-0016).
-   - **`string->json`'s offsets count characters.** A character of 2 to 4
-     UTF-8 bytes moves the byte offset further than the character offset.
-   - **`json=?` must compare hashtables by their members, and `json-number`
-     records by text** (ADR-0006, ADR-0017). `canonical` in
-     `(jsonparse-testing tree)` does both for the tests.
-   - The conformance vectors run through it.
-   - The import check refuses any `src/` library that imports it (ADR-0010).
+6. **`(jsonparse easy)`** (done, close-out below): reading, writing,
+   `json-ref`, `json=?` and `json-null?`, and `check-json` in the writer
+   (ADR-0019).
 7. **`(jsonparse sequence)`** and its easy-layer procedures (ADR-0014).
    - It covers JSON Lines and NDJSON, RFC 7464, and whitespace-separated
      values.
@@ -96,8 +82,100 @@ newest first.
    - **Records written as `lines` go through `put-json` at `indent` 0,**
      then a `\n`. A refused value raises before any byte of its record
      is written (ADR-0018).
+   - **Its easy-layer procedures raise as `(jsonparse easy)`'s readers
+     do** (ADR-0019):
+     - the reason is the parser's code, and the offset is in bytes;
+     - each error has a who, a message and an empty irritants list, and
+       is raised non-continuable;
+     - a writer refusal is relabelled only around `check-json`, never
+       around a caller's port.
+   - **`read-json` reads a port 16 KiB at a time** into one buffer per
+     call, which is most of its 21 KB per call (ADR-0019).
 
 ## Close-outs
+
+### Slice 6: the easy layer (2026-11-07)
+
+- **Landed:**
+  - **`(jsonparse easy)`** (ADR-0019):
+    - **reading:** `string->json`, `bytevector->json` and `read-json`
+      read one whole document with a new builder. Bad input raises
+      `&json-error`, with the parser's code as its reason. Its offset is
+      in characters for a string and in bytes otherwise;
+    - **writing:** `json->string`, `json->bytevector` and `write-json`
+      compose `put-json`. A refusal is raised again with the easy
+      procedure as its who, and what a caller's port raises passes
+      through;
+    - **`json-ref`** follows a path, the last duplicate winning. Where it
+      leads nowhere, it raises `not-found`, or gives the value after a
+      closing `'default`, the owner's choice of form;
+    - **`json=?`** checks both values as `put-json` would, then compares
+      objects as unordered members, the last duplicate winning, and
+      numbers by exact value. A `json-number` costs time linear in its
+      text, however long its exponent;
+    - **`json-null?`**, and re-exports of `&json-error`, the options and
+      `json-number`.
+  - **`(jsonparse writer)`:** `check-json`, the check `put-json` runs
+    before writing, on its own, with its own who.
+  - **Suites:**
+    - `easy`: hand-written cases for every procedure, every error code
+      through each reader, ports across chunk boundaries and re-entrant
+      ports, every hashtable equivalence, numbers in every spelling,
+      exponents past 10^19, and the arguments;
+    - `easy-property`: the corpus through both layers under six option
+      sets; character offsets under 3,000 mutations; `json=?` against an
+      oracle of its own; alists against hashtables; round trips.
+  - **Records:** ADR-0019, `docs/easy.md`, the global constraints, and
+    notes in `docs/writer.md` and `docs/tree.md`.
+- **Results:**
+  - **Both layers return the same values:** on all 376 corpus files, under
+    six option sets, through each reader, easy's value or error matches a
+    builder's.
+  - **Character offsets:** every one of 185,179 errors on valid UTF-8
+    landed on a character's first byte or the end, so a character offset
+    is the count of characters before the byte offset.
+  - **Measurements** (ADR-0019):
+    - `string->json` costs 9 to 28% more than reading bytes;
+    - `json=?` takes 11 to 43% of reading on ADR-0018's documents, and up
+      to 2.5 times on one object of 90,000 members held in hashtables;
+    - `read-json` costs 21 KB per call, mostly its 16 KiB buffer.
+- **Evidence:**
+  - `scripts/guix-env make test` runs 27 suites in about 44 s. The new
+    ones pass 1,460 and 57.
+  - **Every assertion was watched fail.** The builders ran about 240
+    mutants of the library and 14 of the property suite. Of the review's
+    and the fixes' 22, and 9 of `json-ref`'s default, all now fail the
+    hand-written suite.
+  - **A reference in Python** that shares no code with the library agreed
+    with `json=?` on 4,000 number pairs, 1,353 of them with exponents of
+    20 digits or more.
+- **Review:** an adversarial review found two defects:
+  - `json=?` took time quadratic in a `json-number`'s exponent digits:
+    6 s for 200,000 digits, which `text` mode reads in 1 ms. A server
+    comparing untrusted values was open to denial of service;
+  - `write-json` relabelled or lost a `&json-error` raised by the
+    caller's own port.
+
+  Its other findings:
+  - nine mutants both suites survived: `check-json`'s who at three
+    refusals, continuable raises, read errors without irritants, and `#f`
+    members;
+  - figures in ADR-0019 its own table contradicted;
+  - claims about wrong arguments and irritants that overstated the code;
+  - gaps in `docs/easy.md`.
+
+  All are fixed, each fix watched fail:
+  - an exponent past 19 digits is added to as text: 1 ms at 200,000
+    digits;
+  - `write-json` relabels only its check;
+  - read errors carry empty irritants.
+- **Known:**
+  - **`json=?` can't see duplicate keys,** and needs the options the
+    values were read with.
+  - **`json=?` on hashtables pays for sorting each table's keys** in its
+    check, as `put-json` does.
+  - **A closed port** fails in the R6RS procedure that reads or writes
+    it, not in easy's check.
 
 ### Slice 5: the writer (2026-11-06)
 

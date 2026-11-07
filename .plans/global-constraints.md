@@ -146,6 +146,26 @@ record disagree, the record wins and this file gets fixed.
   (ADR-0018).
 - **`&json-error` is an `&error` with a reason and an offset,** defined in
   `(jsonparse error)` below the easy layer (ADR-0010, ADR-0018).
+- **`check-json` is the check `put-json` runs before writing,** on its own
+  (ADR-0019).
+
+## The easy layer
+
+- **Reading takes one whole document, with a new builder each call.** Bad
+  input raises `&json-error`, its reason the parser's code. Its offset
+  counts the characters before the byte offset for a string, and bytes for
+  a bytevector or a port (ADR-0010, ADR-0019).
+- **Writing is `put-json`'s.** A refusal is raised again with the easy
+  procedure as its who. What a caller's port raises passes through as it
+  was raised (ADR-0019).
+- **`json=?` checks both values as `put-json` would,** then compares objects
+  as unordered members, the last duplicate winning, and numbers by exact
+  value, in time linear in a `json-number`'s text. `json-ref` lets the last
+  duplicate win too. Its `'default` replaces `not-found` only (ADR-0019).
+- **Every `&json-error` this layer raises has a who, a message and
+  irritants,** and is raised non-continuable (ADR-0019).
+- **Never decode bytes that may start with U+FEFF with `utf8->string`:**
+  Chez drops the mark (ADR-0016).
 
 ## Streams of values
 

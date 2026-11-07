@@ -1,6 +1,6 @@
 #!r6rs
 ;;; (jsonparse writer): writes a value as JSON, in UTF-8, to a binary port
-;;; (ADR-0007, ADR-0010, ADR-0011, ADR-0018).
+;;; (ADR-0007, ADR-0010, ADR-0011, ADR-0018, ADR-0019).
 ;;;
 ;;;   (put-json port '(("a" . #(1 null))))            ; {"a":[1,null]}
 ;;;   (put-json port v (make-json-options 'indent 2))  ; laid out, 2 spaces
@@ -43,12 +43,13 @@
 ;;;
 ;;; A value is checked whole before a byte is written, so a refusal leaves
 ;;; the port as it was. The check walks the value as the writing does, with
-;;; the same code, and costs a second walk.
+;;; the same code, and costs a second walk. check-json runs the check
+;;; alone (ADR-0019).
 ;;;
 ;;; The options' indent lays the value out (ADR-0018). The writer reads
 ;;; null, depth-limit and indent, and ignores the reader's options.
 (library (jsonparse writer)
-  (export put-json)
+  (export put-json check-json)
   (import (rnrs)
           (jsonparse error)
           (jsonparse options)
@@ -173,9 +174,9 @@
 
   ;; --- the walk ---------------------------------------------------------------
 
-  (define (refuse reason message v)
+  (define (refuse who reason message v)
     (raise (condition (make-json-error reason #f)
-                      (make-who-condition 'put-json)
+                      (make-who-condition who)
                       (make-message-condition message)
                       (make-irritants-condition (list v)))))
 
@@ -188,40 +189,41 @@
   ;; hashtable's own order. Refuses two keys with the same text, which a
   ;; table not keyed by string=? can hold: they have no order but the
   ;; table's own.
-  (define (sorted-members h)
+  (define (sorted-members who h)
     (let-values (((keys values) (hashtable-entries h)))
       (vector-for-each
        (lambda (k)
          (unless (string? k)
-           (refuse 'unwritable-key "an object's key is not a string" k)))
+           (refuse who 'unwritable-key "an object's key is not a string" k)))
        keys)
       (let ((members (list-sort (lambda (a b) (string<? (car a) (car b)))
                                 (map cons (vector->list keys) (vector->list values)))))
         (let loop ((ms members))
           (when (and (pair? ms) (pair? (cdr ms)))
             (when (string=? (caar ms) (caadr ms))
-              (refuse 'unwritable-key "a hashtable holds two keys with the same text" (caar ms)))
+              (refuse who 'unwritable-key "a hashtable holds two keys with the same text" (caar ms)))
             (loop (cdr ms))))
         members)))
 
   ;; An alist's members, refused unless they make a proper list of pairs
   ;; whose keys are strings.
-  (define (alist-members v)
+  (define (alist-members who v)
     (unless (list? v)
-      (refuse 'unwritable-value "a list that is not an alist: it is improper or circular" v))
+      (refuse who 'unwritable-value "a list that is not an alist: it is improper or circular" v))
     (for-each
      (lambda (m)
        (unless (pair? m)
-         (refuse 'unwritable-value "a list that is not an alist: a member is not a pair" m))
+         (refuse who 'unwritable-value "a list that is not an alist: a member is not a pair" m))
        (unless (string? (car m))
-         (refuse 'unwritable-key "an object's key is not a string" (car m))))
+         (refuse who 'unwritable-key "an object's key is not a string" (car m))))
      v)
     v)
 
-  ;; walk : Binary-Output-Port Boolean Any json-options -> Void
+  ;; walk : Symbol (U Binary-Output-Port #f) Boolean Any json-options -> Void
   ;; Writes V to PORT when EMIT? is true; otherwise only checks it, and
-  ;; touches no port. Either way raises for what JSON can't express.
-  (define (walk port emit? v options)
+  ;; touches no port. Either way raises for what JSON can't express, with
+  ;; WHO as the who.
+  (define (walk who port emit? v options)
     (define null (json-options-null options))
     (define limit (json-options-depth-limit options))
     (define indent (json-options-indent options))
@@ -243,7 +245,7 @@
     ;; byte OPEN.
     (define (open x open depth)
       (when (fx>? depth limit)
-        (refuse 'nesting-too-deep "more arrays and objects open at once than depth-limit" x))
+        (refuse who 'nesting-too-deep "more arrays and objects open at once than depth-limit" x))
       (put-byte open))
 
     ;; Before a member at DEPTH: a comma unless it is the first, and a new
@@ -285,16 +287,16 @@
             ((eq? x #t) (put-bytes literal-true))
             ((eq? x #f) (put-bytes literal-false))
             ((vector? x) (array x (fx+ depth 1)))
-            ((or (pair? x) (null? x)) (object x (alist-members x) (fx+ depth 1)))
+            ((or (pair? x) (null? x)) (object x (alist-members who x) (fx+ depth 1)))
             ((and emit? (fixnum? x)) (put-fixnum port x digits))
             ((number? x)
              (if emit?
                  (put-bytes (string->utf8 (number-text x)))
                  (unless (writable-number? x)
-                   (refuse 'unwritable-number "a number JSON can't express" x))))
-            ((hashtable? x) (object x (sorted-members x) (fx+ depth 1)))
+                   (refuse who 'unwritable-number "a number JSON can't express" x))))
+            ((hashtable? x) (object x (sorted-members who x) (fx+ depth 1)))
             ((json-number? x) (when emit? (put-bytes (string->utf8 (json-number-text x)))))
-            (else (refuse 'unwritable-value "a value JSON can't express" x))))
+            (else (refuse who 'unwritable-value "a value JSON can't express" x))))
 
     (value v 0))
 
@@ -313,5 +315,18 @@
          (assertion-violation 'put-json "not a binary output port" port))
        (unless (json-options? options)
          (assertion-violation 'put-json "not an options record" options))
-       (walk port #f v options)
-       (walk port #t v options)))))
+       (walk 'put-json port #f v options)
+       (walk 'put-json port #t v options))))
+
+  ;; check-json : Any [json-options] -> Void
+  ;; Raises the &json-error put-json would raise for V under OPTIONS
+  ;; (default (make-json-options)), with check-json as its who, and writes
+  ;; nothing (ADR-0019). Raises an assertion violation if OPTIONS is not an
+  ;; options record.
+  (define check-json
+    (case-lambda
+      ((v) (check-json v default-options))
+      ((v options)
+       (unless (json-options? options)
+         (assertion-violation 'check-json "not an options record" options))
+       (walk 'check-json #f #f v options)))))
