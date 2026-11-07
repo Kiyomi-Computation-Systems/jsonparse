@@ -103,5 +103,7 @@ with.
   65535. The default is 512. Going deeper is the error `nesting-too-deep`.
 - `number-mode` and `digit-limit` are for the assembler, and the parser
   ignores them: see [string.md](string.md).
+- `object-mode` and `null` are for the builder, and the parser ignores
+  them: see [tree.md](tree.md).
 
 A bad option raises an assertion violation when the options are made.
