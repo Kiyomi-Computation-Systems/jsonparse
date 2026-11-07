@@ -2,7 +2,8 @@
 
 `put-json` writes a Scheme value as JSON, in UTF-8, to a binary port. It
 writes what [tree.md](tree.md)'s builder gives you, and refuses anything
-JSON can't express.
+JSON can't express. To get a string or a bytevector instead, see
+[easy.md](easy.md).
 
 ## In one minute
 
@@ -72,6 +73,9 @@ value leaves your port untouched:
 
 The part that was refused, such as the number or the key, is the
 condition's irritant, and `json-error-offset` is `#f`.
+
+`(check-json value)` raises what `put-json` would, and writes nothing. Use
+it to check a value before you start a response.
 
 ## Options
 
