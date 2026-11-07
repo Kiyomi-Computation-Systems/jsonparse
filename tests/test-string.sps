@@ -299,7 +299,16 @@
          #f)
    (list "a top-level string"
          (u8 (j "'~u00e9x'"))
-         '((string "\xe9;x")))))
+         '((string "\xe9;x")))
+   ;; Chez's utf8->string drops a byte order mark that comes first; in
+   ;; JSON it is text.
+   (list "U+FEFF, the byte order mark, is text: first, last, alone and twice, raw and escaped"
+         (bytes "[\"" '(#xEF #xBB #xBF) "a\",\"\\uFEFF\",\"a\\ufeff\",\"\\ufeff\\uFEFF\",\""
+                '(#xEF #xBB #xBF #xEF #xBB #xBF) "\"]")
+         (array-of "\xfeff;a" "\xfeff;" "a\xfeff;" "\xfeff;\xfeff;" "\xfeff;\xfeff;"))
+   (list "U+FEFF first in a key, raw and escaped"
+         (bytes "{\"" '(#xEF #xBB #xBF) "k\":\"v\",\"\\uFEFF\":\"w\"}")
+         '(object-start (key "\xfeff;k") (string "v") (key "\xfeff;") (string "w") object-end))))
 
 ;; The mixed cases hold ~ for a backslash; build them here.
 (define (tilde bv)

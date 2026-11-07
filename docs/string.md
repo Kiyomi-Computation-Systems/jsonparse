@@ -96,6 +96,8 @@ from taking minutes. In `text` mode there is no limit.
 - `digit-limit`: how many digits a number may have, counting its fraction
   and exponent, from 1 to the greatest fixnum. The default is 1000.
 
+The assembler ignores the other options.
+
 ## `json-number`
 
 ```scheme

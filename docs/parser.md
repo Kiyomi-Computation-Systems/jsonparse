@@ -105,5 +105,7 @@ with.
   ignores them: see [string.md](string.md).
 - `object-mode` and `null` are for the builder, and the parser ignores
   them: see [tree.md](tree.md).
+- `indent` is for the writer, and the parser ignores it: see
+  [writer.md](writer.md).
 
 A bad option raises an assertion violation when the options are made.

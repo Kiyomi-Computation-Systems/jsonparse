@@ -71,3 +71,6 @@ of them can be taken for another.
   they refuse ends the parse with `number-too-long` or
   `number-out-of-range`.
 - `depth-limit`: see [parser.md](parser.md).
+- `indent` is for the writer, and the builder ignores it.
+
+To write a value back out as JSON, see [writer.md](writer.md).
