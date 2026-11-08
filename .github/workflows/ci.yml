@@ -1,11 +1,15 @@
 name: CI
 
-# Linux only, deliberately (AGENTS.md: do NOT set up macOS runners). One job,
-# run on two images, amd64 and arm64 (ADR-0009): it gets byte-machine and
-# chez-srfi with `make submodules`, holds them at their pins with `make
-# check-pins`, builds Chez at its floor (once, then cached), and runs `make
-# test`, which runs check-help, check-chez, check-suites, check-versions,
-# check-corpora, check-imports and every suite. No benchmarks (ADR-0013).
+# Linux only, deliberately (AGENTS.md: do NOT set up macOS runners). Two jobs:
+#
+# - `linux`, run on two images, amd64 and arm64 (ADR-0009). It gets
+#   byte-machine and chez-srfi with `make submodules`, holds them at their
+#   pins with `make check-pins`, builds Chez at its floor (once, then
+#   cached), and runs `make test`, which runs check-help, check-chez,
+#   check-suites, check-versions, check-corpora, check-imports and every
+#   suite. No benchmarks (ADR-0013).
+# - `site`, on amd64: the docs site's checks and build, as pages.yml runs
+#   them (ADR-0021).
 #
 # Every action is pinned to a full commit SHA, with its tag in a comment: a tag
 # can be moved to other code, a commit cannot.
@@ -176,3 +180,60 @@ jobs:
       # links SRFI-64 first.
       - name: Test
         run: make test
+
+  # The docs site (ADR-0021): the Pages workflow's build, on every pull
+  # request, so a release tag's deploy does not fail first. apt's Chez and
+  # cmark-gfm alone, no compiler. apt's Chez is below the floor, which is
+  # fine here: nothing the site runs loads jsonparse or byte-machine. The
+  # site's code uses only chez-srfi, for its suites' SRFI-64, but `make
+  # deps`, which links it, needs both submodules' checkouts. Ubuntu 24.04 has
+  # no arm64 chezscheme, so the job runs on amd64 alone. The fetch script's
+  # offline test runs first; then the generator's suites and
+  # docs/ rendered in memory: every page in the nav, every link and anchor
+  # resolving, anchors as GitHub makes them. chez-cmark-gfm comes from the
+  # archive Akku.lock pins.
+  site:
+    name: site
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      # Each job checks its architecture twice (ADR-0009): here, and Chez's
+      # machine type below.
+      - name: Assert the machine is x86_64
+        run: |
+          got="$(uname -m)"
+          [ "$got" = x86_64 ] || { echo "::error::runner ubuntu-24.04 is $got, not x86_64"; exit 1; }
+          echo "machine $got"
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Chez and cmark-gfm
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends chezscheme cmark-gfm xz-utils
+
+      # ta6le is amd64 and threaded (a6le has no threads): the site's suites
+      # import (jsonparse-testing), which takes Chez's mutexes, a threaded
+      # build's alone.
+      - name: Assert Chez is a ta6le build
+        run: |
+          got="$(echo '(display (machine-type))' | chezscheme -q)"
+          [ "$got" = ta6le ] || { echo "::error::Chez's machine type is $got, not ta6le"; exit 1; }
+          echo "Chez machine type $got"
+
+      - name: Init submodules
+        run: make submodules
+
+      - name: Test the lock fetcher offline
+        run: make check-site-deps
+
+      - name: Get chez-cmark-gfm as Akku.lock pins it
+        run: make site-deps
+
+      - name: Gate the site
+        run: make check-site CHEZ=chezscheme
+
+      - name: Build the site
+        run: make site CHEZ=chezscheme

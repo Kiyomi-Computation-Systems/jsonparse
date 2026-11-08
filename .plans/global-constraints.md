@@ -10,9 +10,9 @@ record disagree, the record wins and this file gets fixed.
   CI (AGENTS.md).
 - **Chez:** 10.4.1 or later (ADR-0008).
 - **CI:** Linux amd64 and arm64 (`ubuntu-24.04` and `ubuntu-24.04-arm`).
-  Each job checks `uname -m` and Chez's machine type. Never a macOS runner:
-  macOS is covered by `make test` on the owner's M1 laptop (ADR-0009,
-  AGENTS.md).
+  Each job that runs Chez checks `uname -m` and Chez's machine type. Never a
+  macOS runner: macOS is covered by `make test` on the owner's M1 laptop
+  (ADR-0009, ADR-0021, AGENTS.md).
 
 ## Portability
 
@@ -222,11 +222,23 @@ record disagree, the record wins and this file gets fixed.
   its header (ADR-0011, ADR-0012).
 - **Every name a `(jsonparse ...)` library exports has one entry in
   `docs/reference.md`,** naming the libraries that export it, and is named
-  in a guide. Nothing else has an entry. `tests/test-docs.sps` holds that
-  (ADR-0012).
+  in a guide, which neither the reference nor the home page is. Nothing else
+  has an entry. `tests/test-docs.sps` holds that (ADR-0012, ADR-0021).
 - **`make test` needs no network and no comparator.** Benchmark files are
   fetched on the host, checked by SHA-256, and never committed (ADR-0012,
   ADR-0013).
+
+## The docs site
+
+- **`make site` renders `docs/` with the generator under `site/`,** copied
+  from circuit. `docs/README.md` is the home page, and its "Read next" list
+  is the nav. `make check-site` holds the nav, every link and anchor, and
+  that list (ADR-0021).
+- **chez-cmark-gfm is a development dependency** in `Akku.lock`, fetched on
+  the host by `make site-deps`. Nothing under `src/` and no
+  `tests/test-*.sps` imports it (ADR-0021).
+- **Pages deploys from `pages.yml` on a `v*` tag, or by hand from `main`.**
+  The `github-pages` environment takes `main` and `v*` tags only (ADR-0021).
 
 ## Environment
 

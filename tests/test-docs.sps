@@ -9,9 +9,9 @@
 ;;;      none for anything else, and each entry names exactly the libraries
 ;;;      that export it
 ;;;   3. every exported name also appears in a guide, a docs/*.md file other
-;;;      than the reference, as a whole name: neither character beside it
-;;;      may continue a Scheme identifier, so json-error? doesn't count as
-;;;      json-error
+;;;      than the reference and the home page, README.md, as a whole name:
+;;;      neither character beside it may continue a Scheme identifier, so
+;;;      json-error? doesn't count as json-error. The guides are pinned.
 ;;;
 ;;; A failing check lists what differs.
 (import (rnrs)
@@ -66,12 +66,16 @@
 (define export-lists
   (map (lambda (lib) (exports (string-append src-dir "/" lib ".sls"))) libraries))
 
-;; The guides, one string: every docs/*.md but the reference.
+;; The guides: every docs/*.md but the reference and the home page. Both name
+;; exports without explaining them, so a name only they hold isn't documented.
+(define guide-files
+  (filter (lambda (f) (not (member f '("reference.md" "README.md"))))
+          (corpus-files docs-dir ".md")))
+
+;; The guides, one string.
 (define docs
   (apply string-append
-         (map (lambda (f) (read-text (string-append docs-dir "/" f)))
-              (filter (lambda (f) (not (string=? f "reference.md")))
-                      (corpus-files docs-dir ".md")))))
+         (map (lambda (f) (read-text (string-append docs-dir "/" f))) guide-files)))
 
 ;; --- the reference ---------------------------------------------------------------
 
@@ -148,6 +152,10 @@
 (test-equal "the libraries under src/jsonparse"
   '("easy" "error" "options" "parser" "sequence" "string" "tree" "writer")
   libraries)
+
+(test-equal "the guides are every docs page but the reference and the home page"
+  '("easy.md" "parser.md" "sequence.md" "string.md" "tree.md" "writer.md")
+  guide-files)
 
 (test-equal "a whole name is found, but not as part of a longer one"
   '(#t #t #t #t #f #f #f)

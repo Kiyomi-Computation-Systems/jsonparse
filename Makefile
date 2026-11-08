@@ -60,7 +60,7 @@ TIMEOUT ?= $(or $(shell command -v timeout 2>/dev/null),$(shell command -v gtime
 
 # One physical line: check-help reads it with awk, and fails if it ends in
 # a backslash.
-.PHONY: help check-help check-guix check-guix-inside submodules check-pins check-chez deps dev run generate test check-suites check-imports check-versions check-corpora clean
+.PHONY: help check-help check-guix check-guix-inside submodules check-pins check-chez deps dev run generate test check-suites check-imports check-versions check-corpora site-deps site check-site check-site-deps clean
 
 .DEFAULT_GOAL := help
 
@@ -267,6 +267,56 @@ check-versions: deps ## Fail unless the Akku floor, Akku.lock and the vendored b
 check-corpora: deps ## Fail unless each corpus under tests/corpus has a LICENSE and a SOURCE, and none holds JSON_checker files
 	@scripts/require-tools "$(GOAL)" $(CHEZ)
 	@$(CHEZ) --libdirs $(TEST_LIBDIRS) --program tests/check-corpora.sps tests/corpus
+
+# --- the docs site ------------------------------------------------------------
+# docs/*.md rendered to build/site/ through chez-cmark-gfm, by the generator
+# under site/, copied from circuit (ADR-0021). Akku.lock pins chez-cmark-gfm
+# for the site alone: nothing under src/ and no tests/test-*.sps imports it,
+# so `make test` needs none of this. The site needs the system cmark-gfm
+# library (`cmark-gfm` from Homebrew or apt). In the container,
+# scripts/guix-env-enter hands chez-cmark-gfm the profile's by absolute path
+# (CHEZ_CMARK_GFM_LIBS).
+#
+# chez-cmark-gfm comes from an `akku install` tree when there is one, and
+# otherwise from the archive Akku.lock pins, downloaded and checked against
+# the lock's sha256 by scripts/fetch-akku-lock. Run `make site-deps` on the
+# host, where the network is, once and again after `make clean`; in between it
+# needs none, and the container finds the tree under build/.
+SITE_CMARK   := $(if $(wildcard .akku/lib/cmark/gfm.sls),.akku/lib,$(BUILD_DIR)/akku/chez-cmark-gfm/src)
+SITE_LIBDIRS := .:$(SITE_CMARK)
+SITE_REF     ?= main
+
+site-deps: ## (host, and after make clean) Get chez-cmark-gfm as Akku.lock pins it: an `akku install` tree, else the locked archive
+	@if [ -f .akku/lib/cmark/gfm.sls ]; then \
+	  echo "site-deps: using .akku/lib (akku install)"; \
+	else \
+	  AKKU_DEST=$(BUILD_DIR)/akku sh scripts/fetch-akku-lock chez-cmark-gfm; \
+	fi
+
+# The site's targets take any Chez, not only one at the floor: nothing they
+# run loads jsonparse or byte-machine, and CI's site job and the Pages
+# workflow run them on apt's Chez, which is below it. It must be threaded,
+# as for every suite: (jsonparse-testing) takes Chez's mutexes.
+site: site-deps ## Render docs/ into build/site/ (open build/site/index.html); SITE_REF=<tag> pins links to repository files
+	@scripts/require-tools "$(GOAL)" $(CHEZ)
+	@mkdir -p $(BUILD_DIR)/site
+	@SITE_REF="$(SITE_REF)" SITE_OUT=$(BUILD_DIR)/site \
+	  $(CHEZ) --libdirs $(SITE_LIBDIRS) --program build-site.sps
+	@cp site/style.css $(BUILD_DIR)/site/style.css
+	@echo "site: $(BUILD_DIR)/site ready (open $(BUILD_DIR)/site/index.html)"
+
+# The generator's own suites (SRFI-64, so `deps` too), then the real site,
+# rendered in memory and checked. site-unit runs with no chez-cmark-gfm on its
+# path, so a site library it tests that starts importing (cmark gfm) fails
+# there at import.
+check-site: site-deps deps ## Test the site generator, then render docs/ in memory and check its nav, links, anchors and Read next list
+	@scripts/require-tools "$(GOAL)" $(CHEZ)
+	@$(CHEZ) --libdirs .:tests:$(SRFI_LIBS) --program tests/site-unit.sps
+	@$(CHEZ) --libdirs $(SITE_LIBDIRS):tests:$(SRFI_LIBS) --program tests/site-render-unit.sps
+	@SITE_REF="$(SITE_REF)" $(CHEZ) --libdirs $(SITE_LIBDIRS) --program tests/site-check.sps
+
+check-site-deps: ## Test scripts/fetch-akku-lock offline, against a local archive and lock of its own
+	@sh tests/fetch-akku-lock.sh
 
 clean: ## Remove build/
 	rm -rf build
