@@ -21,8 +21,8 @@ v                                        ; => (("name" . "Ada") ("langs" . #("en
 ;; => (unexpected-byte 9)
 ```
 
-To try it, run `make submodules` once in a checkout, then `make dev`, and
-type the lines into the REPL it starts.
+[Installing](installing.md) says how to get it: from a checkout now, and soon
+with Akku. In a checkout, `make dev` starts a REPL to type these lines into.
 
 ## Ideas to keep in mind
 
@@ -60,10 +60,12 @@ Most programs need only `(jsonparse easy)`.
 
 ## Status
 
-Not released yet. The API may change before the first release.
+v0.1.0, the first release. The API may change in any release before 1.0;
+the [changelog](../CHANGELOG.md) says what each release has.
 
 ## Read next
 
+- [Installing](installing.md): from a checkout, and soon with Akku.
 - [Whole documents and streams](easy.md): read, write and look inside
   values with one import.
 - [Building values](tree.md): a builder you feed bytes as they arrive.

@@ -44,8 +44,10 @@ record disagree, the record wins and this file gets fixed.
   consumers' regenerated parsers (ADR-0002).
 - **chez-srfi**, for SRFI-64 in tests only, is pinned at a commit, since
   upstream has no tags (ADR-0012).
-- **Only `src/` reaches the Akku package.** `.akkuignore` and
-  `.gitattributes` keep the rest out (ADR-0003).
+- **Only `src/`'s libraries reach a consumer's library path.** `.akkuignore`
+  lists the rest, `.gitattributes` keeps `.plans` and `AGENTS.md` out of the
+  archive, and `make check-akku` installs the package as a consumer would
+  (ADR-0003, ADR-0022).
 
 ## Layers
 
@@ -222,8 +224,9 @@ record disagree, the record wins and this file gets fixed.
   its header (ADR-0011, ADR-0012).
 - **Every name a `(jsonparse ...)` library exports has one entry in
   `docs/reference.md`,** naming the libraries that export it, and is named
-  in a guide, which neither the reference nor the home page is. Nothing else
-  has an entry. `tests/test-docs.sps` holds that (ADR-0012, ADR-0021).
+  in a guide, which the reference, the home page and `installing.md` are
+  not. Nothing else has an entry. `tests/test-docs.sps` holds that (ADR-0012,
+  ADR-0021).
 - **`make test` needs no network and no comparator.** Benchmark files are
   fetched on the host, checked by SHA-256, and never committed (ADR-0012,
   ADR-0013).
@@ -239,6 +242,19 @@ record disagree, the record wins and this file gets fixed.
   `tests/test-*.sps` imports it (ADR-0021).
 - **Pages deploys from `pages.yml` on a `v*` tag, or by hand from `main`.**
   The `github-pages` environment takes `main` and `v*` tags only (ADR-0021).
+
+## Releases
+
+- **The version follows semantic versioning.** Before 1.0 any release may
+  change the API, and a new byte-machine runtime ABI means a new minor
+  version. `Akku.manifest`, `CHANGELOG.md`'s newest release and the home
+  page's Status name one version, and `make check-release` holds that
+  (ADR-0022).
+- **Akku is 1.2.0,** pinned by sha256 in `scripts/akku-tool.lock` and run by
+  `scripts/akku` (ADR-0022).
+- **A release is published with `scripts/akku-publish`,** from a fresh clone
+  at the tag, signed with the Kiyomi Computation Systems release key, and
+  checked (ADR-0022).
 
 ## Environment
 

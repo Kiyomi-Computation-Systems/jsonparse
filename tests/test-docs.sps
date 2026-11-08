@@ -9,9 +9,10 @@
 ;;;      none for anything else, and each entry names exactly the libraries
 ;;;      that export it
 ;;;   3. every exported name also appears in a guide, a docs/*.md file other
-;;;      than the reference and the home page, README.md, as a whole name:
-;;;      neither character beside it may continue a Scheme identifier, so
-;;;      json-error? doesn't count as json-error. The guides are pinned.
+;;;      than the reference, the home page, README.md, and installing.md, as a
+;;;      whole name: neither character beside it may continue a Scheme
+;;;      identifier, so json-error? doesn't count as json-error. The guides
+;;;      are pinned.
 ;;;
 ;;; A failing check lists what differs.
 (import (rnrs)
@@ -66,10 +67,11 @@
 (define export-lists
   (map (lambda (lib) (exports (string-append src-dir "/" lib ".sls"))) libraries))
 
-;; The guides: every docs/*.md but the reference and the home page. Both name
-;; exports without explaining them, so a name only they hold isn't documented.
+;; The guides: every docs/*.md but the reference, the home page and the
+;; install page. They name exports without explaining them, so a name only
+;; they hold isn't documented.
 (define guide-files
-  (filter (lambda (f) (not (member f '("reference.md" "README.md"))))
+  (filter (lambda (f) (not (member f '("reference.md" "README.md" "installing.md"))))
           (corpus-files docs-dir ".md")))
 
 ;; The guides, one string.
@@ -153,7 +155,7 @@
   '("easy" "error" "options" "parser" "sequence" "string" "tree" "writer")
   libraries)
 
-(test-equal "the guides are every docs page but the reference and the home page"
+(test-equal "the guides are every docs page but the reference, the home page and the install page"
   '("easy.md" "parser.md" "sequence.md" "string.md" "tree.md" "writer.md")
   guide-files)
 

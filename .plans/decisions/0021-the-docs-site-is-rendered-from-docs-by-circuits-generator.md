@@ -1,11 +1,18 @@
 # ADR-0021: The docs site is rendered from docs/ by circuit's generator
 
-- **Status:** Accepted
+- **Status:** Accepted, revised the same day
 - **Date:** 2026-11-08
 - **Scope:** `site/`, `build-site.sps`, `docs/README.md`, the site's
   Makefile targets, chez-cmark-gfm, the `site` CI job and the Pages
   workflow
 - **Related:** ADR-0003, ADR-0008, ADR-0009, ADR-0012
+
+> **Revision (2026-11-08, slice 10).** `make check-akku` (ADR-0022) confirms
+> what the last consequence below left to M5: `build-site.sps` installs
+> nothing, and no library outside `src/` reaches a consumer. The home page
+> also gains a Status that `make check-release` holds, and `installing.md`
+> joins the nav. Like the home page, `installing.md` names exports without
+> explaining them, so it is no guide for `test-docs` (Decision 3).
 
 ## Context
 

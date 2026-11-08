@@ -6,6 +6,41 @@ A fast JSON parser for R6RS Scheme implementations based on [[https://github.com
 ✨ *AI Disclosure:* LLMs are used extensively in the planning and development of this project.
 #+end_quote
 
+** Installing
+
+It needs Chez Scheme 10.4.1 or later. Clone it with its submodule, and put
+two folders on the library path:
+
+#+begin_src sh
+git clone --recursive https://github.com/Kiyomi-Computation-Systems/jsonparse.git
+cd jsonparse
+scheme --libdirs src:vendor/byte-machine/src --program app.sps
+#+end_src
+
+An [[https://akkuscm.org/][Akku]] package is coming. [[file:docs/installing.md][docs/installing.md]] says more.
+
+** A taste
+
+#+begin_src scheme
+(import (rnrs) (jsonparse easy))
+
+(string->json "{\"name\": \"Ada\", \"langs\": [\"en\", \"fr\"]}")
+;; => (("name" . "Ada") ("langs" . #("en" "fr")))
+(json->string '(("ok" . #t) ("n" . 1.5)))
+;; => "{\"ok\":true,\"n\":1.5}"
+#+end_src
+
+** Documentation
+
+The [[https://kiyomi-computation-systems.github.io/jsonparse/][docs site]] has guides to the libraries and an API reference. The
+same pages are Markdown in [[file:docs/README.md][docs/]]. [[file:CHANGELOG.md][CHANGELOG.md]] says what each release has.
+
+** Developing
+
+=make help= lists every target. On a Guix host, run them through
+=scripts/guix-env=, as in =scripts/guix-env make test=. Design records are in
+[[file:.plans/decisions][.plans/decisions]], in the repository but not in release archives.
+
 ** License
 
 © [[https://kiyomicomputation.systems/][Kiyomi Computation Systems LLC]]. Licensed under BSD 3-Clause — see

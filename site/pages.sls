@@ -9,14 +9,15 @@
   ;; label, the home page first, then the order of its "Read next" list.
   ;; tests/site-check.sps asserts the file set here equals docs/*.md.
   (define pages
-    '(("README.md"    . "Home")
-      ("easy.md"      . "Whole documents and streams")
-      ("tree.md"      . "Building values")
-      ("writer.md"    . "Writing JSON")
-      ("sequence.md"  . "Streams of values")
-      ("parser.md"    . "The push parser")
-      ("string.md"    . "Strings and numbers")
-      ("reference.md" . "API reference")))
+    '(("README.md"     . "Home")
+      ("installing.md" . "Installing")
+      ("easy.md"       . "Whole documents and streams")
+      ("tree.md"       . "Building values")
+      ("writer.md"     . "Writing JSON")
+      ("sequence.md"   . "Streams of values")
+      ("parser.md"     . "The push parser")
+      ("string.md"     . "Strings and numbers")
+      ("reference.md"  . "API reference")))
 
   ;; page-file-name : String -> String
   ;; The file a page is written to: README.md, the home page, as index.html,
