@@ -220,7 +220,10 @@
 ;; After a top-level value, top-done takes whitespace, finishes at end of
 ;; input, and sends any other byte to top-more. top-more goes on to a new
 ;; value when bit 0 of mode is set, and is trailing-garbage otherwise. So
-;; under the bit, values that need no separator follow each other with none.
+;; under the bit, an object, array or string needs no separator after it.
+;; A top-level number or literal needs whitespace or the end of the input
+;; after it, else the next byte is unexpected-byte (ADR-0014's revision,
+;; ADR-0020). Under the bit a stream may hold no value at all.
 
 (define many-values (bytes "1 \t\r\n\"a\"\n[true]\r{}\tnull"))
 
@@ -249,12 +252,12 @@
        (bytes "\"a\"\"b\"") mode-1 (list SS (ch "a") SE SS (ch "b") SE acc))
 (case! 'mode "RFC 8259 §2: `\"a\"\"b\"` without the bit is trailing-garbage at 3"
        (bytes "\"a\"\"b\"") '() (list SS (ch "a") SE (rej 'trailing-garbage 3)))
-(case! 'mode "mode bit 0: `truefalse` is two literals"
-       (bytes "truefalse") mode-1 (list 'true 'false acc))
+(case! 'mode "ADR-0014: `truefalse` under the bit is unexpected-byte at 4, where `false` starts"
+       (bytes "truefalse") mode-1 (list 'true (rej 'unexpected-byte 4)))
 (case! 'mode "RFC 8259 §2: `truefalse` without the bit is trailing-garbage at 4"
        (bytes "truefalse") '() (list 'true (rej 'trailing-garbage 4)))
-(case! 'mode "mode bit 0: `-1-2` is two numbers: a `-` ends a number and starts the next"
-       (bytes "-1-2") mode-1 (list (nm "-1") NE (nm "-2") NE acc))
+(case! 'mode "ADR-0014: `-1-2` under the bit is unexpected-byte at 2: a number needs whitespace after it"
+       (bytes "-1-2") mode-1 (list (nm "-1") NE (rej 'unexpected-byte 2)))
 (case! 'mode "RFC 8259 §2: `-1-2` without the bit is trailing-garbage at 2"
        (bytes "-1-2") '() (list (nm "-1") NE (rej 'trailing-garbage 2)))
 (case! 'mode "mode bit 0: `1.5.5` is 1.5, then a value cannot start with `.` at 3"
@@ -274,10 +277,64 @@
        (bytes "1 x") '() (list (nm "1") NE (rej 'trailing-garbage 2)))
 (case! 'mode "mode bit 0: a second value cut short is unexpected-eof"
        (bytes "1 tr") mode-1 (list (nm "1") NE (rej 'unexpected-eof 4)))
-(case! 'mode "mode bit 0: empty input still needs a first value"
-       (bytes) mode-1 (list (rej 'unexpected-eof 0)))
-(case! 'mode "mode bit 0: whitespace alone still needs a first value"
-       (bytes " \n") mode-1 (list (rej 'unexpected-eof 2)))
+(case! 'mode "ADR-0014: an empty stream under the bit holds no values"
+       (bytes) mode-1 (list acc))
+(case! 'mode "ADR-0014: a stream of whitespace alone under the bit holds no values"
+       (bytes " \t\r\n") mode-1 (list acc))
+(case! 'mode "RFC 8259 §2: empty input without the bit is unexpected-eof at 0"
+       (bytes) '() (list (rej 'unexpected-eof 0)))
+(case! 'mode "RFC 8259 §2: whitespace alone without the bit is unexpected-eof at 4"
+       (bytes " \t\r\n") '() (list (rej 'unexpected-eof 4)))
+(case! 'mode "mode bit 0: mode 254 does not set bit 0, so an empty stream is unexpected-eof"
+       (bytes) '((mode . 254)) (list (rej 'unexpected-eof 0)))
+(case! 'mode "mode bit 0: mode 255 sets bit 0, so an empty stream holds no values"
+       (bytes) '((mode . 255)) (list acc))
+(case! 'mode "mode bit 0: whitespace before the first value"
+       (bytes " \n1") mode-1 (list (nm "1") NE acc))
+
+;; Each kind of number end, and each literal, then a byte that starts a
+;; value with no whitespace between: under the bit that byte is
+;; unexpected-byte; without it, trailing-garbage. Each whitespace byte
+;; after one lets the next value follow.
+(for-each
+ (lambda (first)
+   (for-each
+    (lambda (next)
+      (let ((at (string-length first))
+            (events (if (member first '("true" "false" "null"))
+                        (list (string->symbol first))
+                        (list (nm first) NE))))
+        (case! 'mode (string-append "ADR-0014: `" first next "` under the bit is unexpected-byte at "
+                                    (number->string at))
+               (bytes first next) mode-1 (append events (list (rej 'unexpected-byte at))))
+        (case! 'mode (string-append "RFC 8259 §2: `" first next "` without the bit is trailing-garbage at "
+                                    (number->string at))
+               (bytes first next) '() (append events (list (rej 'trailing-garbage at))))))
+    '("-1" "[]" "{}" "\"a\"" "true" "null" "f"))
+   (for-each
+    (lambda (ws)
+      (case! 'mode (string-append "ADR-0014: `" first "` then whitespace byte "
+                                  (number->string (char->integer (string-ref ws 0)))
+                                  " then a value under the bit")
+             (bytes first ws "[]") mode-1
+             (append (if (member first '("true" "false" "null"))
+                         (list (string->symbol first))
+                         (list (nm first) NE))
+                     (list AS AE acc))))
+    '(" " "\t" "\r" "\n")))
+ '("0" "7" "-0" "12" "1.5" "1e5" "1E+5" "2e-3" "true" "false" "null"))
+
+(case! 'mode "ADR-0014: a string, an array and an object need nothing before a number"
+       (bytes "\"a\"1 []2 {}3") mode-1
+       (list SS (ch "a") SE (nm "1") NE AS AE (nm "2") NE OS OE (nm "3") NE acc))
+(case! 'mode "ADR-0014: a literal at the end of the input under the bit"
+       (bytes "1 true") mode-1 (list (nm "1") NE 'true acc))
+(case! 'mode "ADR-0014: inside an array the rule doesn't apply: `[1-2]` is unexpected-byte at 2, with the bit or without"
+       (bytes "[1-2]") mode-1 (list AS (nm "1") NE ctx-a (rej 'unexpected-byte 2)))
+(case! 'mode "RFC 8259 §2: `[1-2]` without the bit is unexpected-byte at 2"
+       (bytes "[1-2]") '() (list AS (nm "1") NE ctx-a (rej 'unexpected-byte 2)))
+(case! 'mode "ADR-0014: mode 254 does not set bit 0, so `1-2` is trailing-garbage at 1"
+       (bytes "1-2") '((mode . 254)) (list (nm "1") NE (rej 'trailing-garbage 1)))
 
 ;; ============ 3. UTF-8 inside strings (RFC 3629 §3, §4; ADR-0012 §4) ======
 ;; Each input is a quote, the sequence, and a quote, so the sequence starts

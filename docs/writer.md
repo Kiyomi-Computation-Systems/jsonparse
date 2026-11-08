@@ -77,6 +77,21 @@ condition's irritant, and `json-error-offset` is `#f`.
 `(check-json value)` raises what `put-json` would, and writes nothing. Use
 it to check a value before you start a response.
 
+## Records of a stream
+
+`(put-json-record port value)` writes the value as one record of a stream,
+in the format the options' `stream` names (see [sequence.md](sequence.md)):
+
+| `stream`             | It writes                    |
+|:---------------------|:-----------------------------|
+| `lines`, the default | the value compact, then `\n` |
+| `seq`                | RS (`#x1E`), the value, `\n` |
+| `values`             | the value, then `\n`         |
+
+It checks the value first, so a refused value writes nothing of its
+record. A `lines` record can't be laid out, since a newline would split it,
+so `indent` above 0 raises.
+
 ## Options
 
 ```scheme
@@ -88,6 +103,7 @@ it to check a value before you start a response.
   level.
 - `null`: the value written as `null`, as for reading.
 - `depth-limit`: the most arrays and objects open at once, as for reading.
+- `stream`: the format `put-json-record` writes.
 
 The writer ignores the other options. It writes any number JSON can
 express, even one that a reader in `flonum` or `exact` mode refuses: more

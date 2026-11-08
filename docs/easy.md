@@ -1,7 +1,7 @@
-# Whole documents: `(jsonparse easy)`
+# Whole documents and streams: `(jsonparse easy)`
 
-One import reads a JSON document into a Scheme value, writes a value back
-out, and looks inside it. Bad input raises an exception that says what went
+One import reads a JSON document, or a stream of them, into Scheme values,
+writes values back out, and looks inside them. Bad input raises an exception that says what went
 wrong and where.
 
 ## In one minute
@@ -71,6 +71,38 @@ anything is written. See [writer.md](writer.md).
   `&json-error` for a value JSON can't express. Give it the options you
   read with, so it knows your `null` and `depth-limit`.
 
+## Streams of values
+
+For a log of many values, one a line (JSON Lines), or RFC 7464's records:
+
+```scheme
+(bytevector->json-sequence (string->utf8 "1\n[2]\n"))   ; => (1 #(2))
+(read-json-sequence port)                              ; from a binary input port
+(fold-json-sequence cons '() port)                     ; each value as it arrives
+(write-json-sequence port '(1 #(2)))                   ; writes 1, \n, [2], \n
+(json-sequence->bytevector '(1 #(2)))                  ; the same, as bytes
+```
+
+- **The format** comes from the options' `stream`: `lines`, the default,
+  `seq` or `values`. [sequence.md](sequence.md) says what each accepts.
+- **`fold-json-sequence`** calls `(kons value acc)` as each record
+  arrives, so a long log needn't fit in memory.
+- **A bad record raises a `&json-record-error`:** a `&json-error` whose
+  offset counts bytes from the stream's start, plus `json-error-record`,
+  the record's number from 1. In `lines` that is the line number.
+- **To skip bad records instead, give a procedure before the options.** It
+  gets each `&json-record-error`, and may raise it to stop:
+
+  ```scheme
+  (read-json-sequence port (lambda (e) (log-it e)))
+  (read-json-sequence port (lambda (e) (log-it e)) (make-json-options 'stream 'seq))
+  ```
+
+  `seq` needs one, since RFC 7464 says to skip. `values` refuses one.
+- **A `lines` record is written compact,** so `indent` must be 0.
+- **`string->json` and the other one-document readers** refuse `stream
+  values`.
+
 ## Options
 
 Every procedure but `json-ref` takes an options record last, as the lower
@@ -87,6 +119,7 @@ Read and write a value with the same `null`.
 
 ## When to use the lower layers
 
-Each call makes a new parser. For many small documents, reuse a builder
-from [tree.md](tree.md). For input that arrives in pieces, feed a builder
-or a parser as the pieces come.
+Each call makes a new parser, or a new reader for a stream. For many small
+documents, reuse a builder from [tree.md](tree.md). For input that arrives
+in pieces, feed a builder or a parser as the pieces come, or a reader from
+[sequence.md](sequence.md) for a stream.

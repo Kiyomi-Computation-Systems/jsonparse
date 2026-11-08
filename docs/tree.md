@@ -42,6 +42,24 @@ shorter.
 - **An error drops everything built so far,** so a bad document holds no
   memory.
 
+## A value at a time
+
+Give a procedure after the options, and the builder hands it each
+top-level value as soon as it is complete, keeping none:
+
+```scheme
+(define b (make-json-builder (make-json-options 'stream 'values)
+                             (lambda (v) (display v))))
+(json-builder-feed! b (string->utf8 "1 [2] {}"))   ; shows 1, #(2) and ()
+(json-builder-finish! b)
+```
+
+A number is complete once the byte after it arrives, or at the finish,
+since `12` might go on as `123`. With `'stream 'values` the input may hold
+any number of values, and the procedure is required. `json-builder-value` raises for such a builder. If
+the procedure returns a stop, the parse ends as a handler's stop ends it.
+[sequence.md](sequence.md) reads streams of lines and RFC 7464 records.
+
 ## What you get
 
 | JSON           | Scheme                                              |
@@ -73,6 +91,7 @@ of them can be taken for another.
   they refuse ends the parse with `number-too-long` or
   `number-out-of-range`.
 - `depth-limit`: see [parser.md](parser.md).
+- `stream`: see [parser.md](parser.md) and above.
 - `indent` is for the writer, and the builder ignores it.
 
 To write a value back out as JSON, see [writer.md](writer.md).

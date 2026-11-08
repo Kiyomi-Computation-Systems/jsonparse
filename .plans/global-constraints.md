@@ -83,7 +83,12 @@ record disagree, the record wins and this file gets fixed.
   - a return value is ignored unless it is a stop, which ends the parse
     with its code.
 - **Options are one record,** checked when it is made. A bad one raises an
-  R6RS assertion violation (ADR-0015).
+  R6RS assertion violation (ADR-0015). So does `blank-lines` under a
+  `stream` other than `lines` (ADR-0020).
+- **A parser reads one value, unless `stream` is `values`.** Then it reads
+  any number, none included, and a top-level number or literal needs
+  whitespace or the end of the input after it, else `unexpected-byte`
+  (ADR-0014, ADR-0020).
 
 ## The assembler
 
@@ -110,6 +115,8 @@ record disagree, the record wins and this file gets fixed.
 - **The value is ready once finish answers `finished`,** and the builder
   keeps it until a reset. An error drops what was built at once, and a
   reset resets the parser and the assembler too (ADR-0015, ADR-0017).
+- **A builder given EACH hands it every top-level value once complete,**
+  and keeps none. `stream values` needs EACH (ADR-0020).
 
 ## Values
 
@@ -148,11 +155,14 @@ record disagree, the record wins and this file gets fixed.
   `(jsonparse error)` below the easy layer (ADR-0010, ADR-0018).
 - **`check-json` is the check `put-json` runs before writing,** on its own
   (ADR-0019).
+- **`put-json-record` writes one record of the options' `stream`,** the
+  value checked whole first. A `lines` record needs `indent` 0 (ADR-0020).
 
 ## The easy layer
 
-- **Reading takes one whole document, with a new builder each call.** Bad
-  input raises `&json-error`, its reason the parser's code. Its offset
+- **`string->json`, `bytevector->json` and `read-json` take one whole
+  document, with a new builder each call;** the stream readers, a new
+  reader each call (ADR-0020). Bad input raises `&json-error`, its reason the parser's code. Its offset
   counts the characters before the byte offset for a string, and bytes for
   a bytevector or a port (ADR-0010, ADR-0019).
 - **Writing is `put-json`'s.** A refusal is raised again with the easy
@@ -164,6 +174,10 @@ record disagree, the record wins and this file gets fixed.
   duplicate win too. Its `'default` replaces `not-found` only (ADR-0019).
 - **Every `&json-error` this layer raises has a who, a message and
   irritants,** and is raised non-continuable (ADR-0019).
+- **A bad record in a stream raises a `&json-record-error`,** a
+  `&json-error` with the record's number. Given a REPORT procedure, a
+  reader skips bad records and gives REPORT each error instead. The
+  one-document readers refuse `stream values` (ADR-0020).
 - **Never decode bytes that may start with U+FEFF with `utf8->string`:**
   Chez drops the mark (ADR-0016).
 
@@ -172,10 +186,21 @@ record disagree, the record wins and this file gets fixed.
 - **Records are framed by byte:** `\n` for `lines` and RS for `seq`. A
   record split across chunks is never copied into one buffer (ADR-0014).
 - **`lines` by default:** a bad record or a blank line is an error, with a
-  record number and a byte offset (ADR-0014).
-- **A skipped record is always reported** to the caller's procedure. `seq`
-  always skips bad records, and drops a possibly cut-off top-level number or
-  literal as `truncated` (ADR-0014).
+  record number and a byte offset (ADR-0014). Offsets count from the
+  stream's start, and records from 1 (ADR-0020).
+- **Giving the reporting procedure turns skipping on,** and every bad
+  record skipped goes to it. A blank line under `'blank-lines 'skip` isn't
+  bad, and goes to no procedure. `seq` needs one, and `values` refuses one. `seq` drops
+  a possibly cut-off top-level number or literal as `truncated` (ADR-0014,
+  ADR-0020).
+- **Each `lines` or `seq` record is a new parse by one reused builder,** so
+  the depth and digit limits apply to each record (ADR-0014, ADR-0020).
+- **A reader keeps its largest string buffer across resets** (ADR-0016,
+  ADR-0020). Re-entering a continuation captured inside its procedures is
+  unsupported (ADR-0020).
+- **A reader's procedures run as a handler's do:** a raise passes out of the
+  feed, and the reader raises until it is reset. Feeding, finishing or
+  resetting it from inside them raises (ADR-0015, ADR-0020).
 - **Records written as `lines` are compact** (ADR-0014).
 
 ## Tests and benchmarks

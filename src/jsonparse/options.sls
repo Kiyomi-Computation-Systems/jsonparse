@@ -44,11 +44,26 @@
 ;;; spaces a level, and a space after each key's colon. An exact integer
 ;;; from 0 to 10, the most JavaScript's JSON.stringify indents by.
 ;;;
-;;; The stream options join this record in their slice (ADR-0014).
+;;; stream is how a stream of many values is framed (ADR-0014, ADR-0020):
+;;;
+;;;   lines   the default. JSON Lines and NDJSON: one value a line, each
+;;;           line ended by a newline, the last one's optional
+;;;   seq     RFC 7464: each value after an RS byte (#x1E)
+;;;   values  values one after another, whitespace between them where it
+;;;           is needed
+;;;
+;;; A parser reads one value unless stream is values, when it reads any
+;;; number of them, none included. (jsonparse sequence) reads every format.
+;;;
+;;; blank-lines is what (jsonparse sequence) does with a blank or
+;;; whitespace-only line under stream lines: error, the default, makes it
+;;; a bad record; skip passes over it. Giving it under any other stream
+;;; raises, since only lines has lines.
 (library (jsonparse options)
   (export make-json-options json-options? json-options-depth-limit
           json-options-number-mode json-options-digit-limit
-          json-options-object-mode json-options-null json-options-indent)
+          json-options-object-mode json-options-null json-options-indent
+          json-options-stream json-options-blank-lines)
   (import (rnrs))
 
   (define default-depth-limit 512)
@@ -59,6 +74,8 @@
   (define default-null 'null)
   (define default-indent 0)
   (define max-indent 10)
+  (define default-stream 'lines)
+  (define default-blank-lines 'error)
 
   ;; json-options? : Any -> Boolean
   ;; json-options-depth-limit : json-options -> Nonnegative-Fixnum
@@ -67,13 +84,17 @@
   ;; json-options-object-mode : json-options -> (U 'alist 'hashtable)
   ;; json-options-null : json-options -> (U Symbol Record)
   ;; json-options-indent : json-options -> Nonnegative-Fixnum, at most 10
+  ;; json-options-stream : json-options -> (U 'lines 'seq 'values)
+  ;; json-options-blank-lines : json-options -> (U 'error 'skip)
   (define-record-type (json-options new-json-options json-options?)
     (fields (immutable depth-limit json-options-depth-limit)
             (immutable number-mode json-options-number-mode)
             (immutable digit-limit json-options-digit-limit)
             (immutable object-mode json-options-object-mode)
             (immutable null json-options-null)
-            (immutable indent json-options-indent))
+            (immutable indent json-options-indent)
+            (immutable stream json-options-stream)
+            (immutable blank-lines json-options-blank-lines))
     (sealed #t)
     (opaque #t))
 
@@ -83,7 +104,7 @@
   ;; make-json-options : (Listof Any) -> json-options
   ;; A record from NAME VALUE pairs; a name left out takes its default.
   ;; Raises for an unknown name, a name given twice, a name with no value,
-  ;; and a value out of range.
+  ;; a value out of range, and blank-lines under a stream other than lines.
   (define (make-json-options . args)
     (let loop ((xs args) (seen '())
                (depth-limit default-depth-limit)
@@ -91,10 +112,15 @@
                (digit-limit default-digit-limit)
                (object-mode default-object-mode)
                (null default-null)
-               (indent default-indent))
+               (indent default-indent)
+               (stream default-stream)
+               (blank-lines default-blank-lines))
       (cond
        ((null? xs)
-        (new-json-options depth-limit number-mode digit-limit object-mode null indent))
+        (when (and (memq 'blank-lines seen) (not (eq? stream 'lines)))
+          (refuse "blank-lines applies only under stream lines" stream))
+        (new-json-options depth-limit number-mode digit-limit object-mode null indent
+                          stream blank-lines))
        ((null? (cdr xs)) (refuse "an option has no value" (car xs)))
        ((memq (car xs) seen) (refuse "an option is given twice" (car xs)))
        (else
@@ -105,25 +131,41 @@
             ((depth-limit)
              (unless (and (fixnum? value) (fx<=? 0 value max-depth-limit))
                (refuse "depth-limit is not an exact integer from 0 to 65535" value))
-             (next value number-mode digit-limit object-mode null indent))
+             (next value number-mode digit-limit object-mode null indent
+                   stream blank-lines))
             ((number-mode)
              (unless (memq value '(flonum exact text))
                (refuse "number-mode is not flonum, exact or text" value))
-             (next depth-limit value digit-limit object-mode null indent))
+             (next depth-limit value digit-limit object-mode null indent
+                   stream blank-lines))
             ((digit-limit)
              (unless (and (fixnum? value) (fx>=? value 1))
                (refuse "digit-limit is not an exact integer from 1 to the greatest fixnum" value))
-             (next depth-limit number-mode value object-mode null indent))
+             (next depth-limit number-mode value object-mode null indent
+                   stream blank-lines))
             ((object-mode)
              (unless (memq value '(alist hashtable))
                (refuse "object-mode is not alist or hashtable" value))
-             (next depth-limit number-mode digit-limit value null indent))
+             (next depth-limit number-mode digit-limit value null indent
+                   stream blank-lines))
             ((null)
              (unless (or (symbol? value) (and (record? value) (not (hashtable? value))))
                (refuse "null is not a symbol, or a record that is not a hashtable" value))
-             (next depth-limit number-mode digit-limit object-mode value indent))
+             (next depth-limit number-mode digit-limit object-mode value indent
+                   stream blank-lines))
             ((indent)
              (unless (and (fixnum? value) (fx<=? 0 value max-indent))
                (refuse "indent is not an exact integer from 0 to 10" value))
-             (next depth-limit number-mode digit-limit object-mode null value))
+             (next depth-limit number-mode digit-limit object-mode null value
+                   stream blank-lines))
+            ((stream)
+             (unless (memq value '(lines seq values))
+               (refuse "stream is not lines, seq or values" value))
+             (next depth-limit number-mode digit-limit object-mode null indent
+                   value blank-lines))
+            ((blank-lines)
+             (unless (memq value '(error skip))
+               (refuse "blank-lines is not error or skip" value))
+             (next depth-limit number-mode digit-limit object-mode null indent
+                   stream value))
             (else (refuse "unknown option" name)))))))))

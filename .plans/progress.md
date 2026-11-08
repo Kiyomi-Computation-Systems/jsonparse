@@ -28,8 +28,9 @@ newest first.
 - **Slice 3, the assembler, is done** (close-out below).
 - **Slice 4, the tree builder, is done** (close-out below).
 - **Slice 5, the writer, is done** (close-out below).
-- **Slice 6, the easy layer, is done** (close-out below). Slice 7,
-  `(jsonparse sequence)`, is next.
+- **Slice 6, the easy layer, is done** (close-out below).
+- **Slice 7, streams of values, is done** (close-out below). Every library
+  the plan's M1 lists now exists. Nothing is planned after it yet.
 
 ## Next
 
@@ -57,42 +58,89 @@ newest first.
 6. **`(jsonparse easy)`** (done, close-out below): reading, writing,
    `json-ref`, `json=?` and `json-null?`, and `check-json` in the writer
    (ADR-0019).
-7. **`(jsonparse sequence)`** and its easy-layer procedures (ADR-0014).
-   - It covers JSON Lines and NDJSON, RFC 7464, and whitespace-separated
-     values.
-   - It reports bad records, and skips them when asked.
-   - Its chunking tests split before, on and after every separator.
-   - It measures the separator scan.
-   - **`values` follows ADR-0014's revision.** Objects, arrays and strings
-     need no separator after them. A top-level number or literal needs
-     whitespace or the end of the input after it, so `1-2` and `truefalse`
-     are errors. An empty stream holds no values.
-     - That is a grammar change under the `mode` bit.
-     - The `machine` suite's mode cases, which pin today's behaviour, change
-       with it.
-     - **The `mode` bit isn't in the options yet.** Slice 7 adds it, and
-       `make-json-parser` passes it to the machine.
-   - **A parser allocates a fixed amount per feed,** mostly byte-machine's
-     own result (ADR-0015). A reader that feeds and resets once per record
-     pays that per record: measure it.
-     - A builder's reset, feed and finish allocate about 976 bytes beside
-       the value, measured in `test-tree-alloc` (2026-11-06).
-   - **A builder keeps its value until it is reset** (ADR-0017). Reset it
-     once each record's value is taken.
-   - **Records written as `lines` go through `put-json` at `indent` 0,**
-     then a `\n`. A refused value raises before any byte of its record
-     is written (ADR-0018).
-   - **Its easy-layer procedures raise as `(jsonparse easy)`'s readers
-     do** (ADR-0019):
-     - the reason is the parser's code, and the offset is in bytes;
-     - each error has a who, a message and an empty irritants list, and
-       is raised non-continuable;
-     - a writer refusal is relabelled only around `check-json`, never
-       around a caller's port.
-   - **`read-json` reads a port 16 KiB at a time** into one buffer per
-     call, which is most of its 21 KB per call (ADR-0019).
+7. **`(jsonparse sequence)`** (done, close-out below): JSON Lines and
+   NDJSON, RFC 7464 and whitespace-separated values, and the easy layer's
+   stream procedures (ADR-0014, ADR-0020).
 
 ## Close-outs
+
+### Slice 7: streams of values (2026-11-08)
+
+- **Landed:**
+  - **The grammar under the `mode` bit** (ADR-0014's revision, ADR-0020):
+    a top-level number or literal needs whitespace or the end after it, so
+    `1-2` and `truefalse` fail, and an empty stream holds no values.
+    Without the bit nothing changes.
+  - **Options:** `stream` (`lines`, `seq` or `values`) and `blank-lines`
+    (`error` or `skip`). `stream values` sets the bit.
+  - **`(jsonparse sequence)`** (ADR-0020):
+    - a reader frames `lines` and `seq` records by byte, for one reused
+      builder, and never copies a record. Under `values` one builder reads
+      the whole stream;
+    - offsets count the stream's bytes, and records count from 1;
+    - a bad record ends the stream, or is skipped and reported when
+      ON-SKIP is given. Giving the procedure turns skipping on: the owner's
+      choice, which revises ADR-0014;
+    - its own codes are `blank-line`, `truncated`, and `unexpected-byte`
+      before the first RS.
+  - **Beside it:** the builder's EACH, `make-json-result`,
+    `put-json-record` and `&json-record-error`.
+  - **The easy layer:** `read-json-sequence`, `bytevector->json-sequence`,
+    `fold-json-sequence`, `write-json-sequence` and
+    `json-sequence->bytevector`, the owner's choice of names. The
+    one-document readers refuse `stream values`.
+  - **Suites:** `sequence` (442), `stream-api` (711), `sequence-alloc`
+    (678), `easy-sequence` (460) and `sequence-property` (62). The
+    `machine` suite's mode cases were rewritten (575).
+  - **Corpus:** SRFI 180's JSON Lines and RFC 7464 files, read by the
+    `sequence` suite.
+  - **Records:** ADR-0020, revision notes on ADR-0014 and ADR-0019,
+    `docs/sequence.md`, and additions to the other docs and the global
+    constraints.
+- **Results** (ADR-0020):
+  - **`lines` and `seq` pay a builder's reset, feed and finish a record:**
+    0.13 to 0.19 µs more than one array. That is 10 to 12% on records of
+    92 bytes, and 2.1 to 4.4 times on values of 5 to 19 bytes.
+  - **`values` reads at one array's speed,** 0.88 to 0.99 times as long.
+  - **The separator scan** is 4 to 12% of reading `lines`.
+  - **A record of `123456` costs 944 bytes** in `lines` or `seq`, and 129
+    in `values`, where the reader adds 80 to an EACH builder.
+- **Evidence:**
+  - `scripts/guix-env make test` runs 32 suites in about 65 s.
+  - **Every assertion was watched fail,** or reported as covering an
+    equivalent change. About 450 mutants of the library and the grammar
+    were run, by four builders, the review and me, and 43 of the property
+    suite.
+  - **The `sequence` suite reads 26,494 chunkings** of its streams: every
+    split, every pair of splits, and chunks of 1, 2, 3 and 7 bytes.
+- **Review:** an adversarial review found no library bug in normal use.
+  - **Its one gap:** a reset that kept the record's first byte passed every
+    suite. A stale byte turns an array into a `truncated` number, or a
+    blank line into content. Three cases after a reset now fail on it.
+    Checking every other field a reset clears found one more, `last`,
+    which nothing reads before it is set again: removed as dead.
+  - **Four claims were false or too broad:**
+    - when a number is announced;
+    - that every skipped record reaches ON-SKIP;
+    - that the easy layer reads one document;
+    - that each `values` record is a new parse.
+
+    All are corrected, in ADR-0020, the constraints, the docs, and a
+    revision note on ADR-0019.
+  - **Its notes:** a reader keeps its largest string buffer, and re-entry
+    into a continuation isn't detected. Both are now in ADR-0020 and
+    `docs/sequence.md`.
+  - **Before it,** a mutant of mine making enter and leave thunks on every
+    call passed the allocation suite's bound of 128 bytes a record. A bound
+    of 96 a value under `values` now fails it.
+- **Known:**
+  - **Under `values`, a corrupt stream can deliver values before its
+    error:** `1 2x` gives 1 and 2, then `unexpected-byte` in record 3.
+  - **A raw newline or RS ends a record,** even inside a string.
+  - **Only `seq` detects a cut-off last record.** A `lines` stream's last
+    line may lack its newline.
+  - **Re-entering a continuation captured inside a reader's procedures**
+    isn't detected (ADR-0020).
 
 ### Slice 6: the easy layer (2026-11-07)
 

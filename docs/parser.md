@@ -88,6 +88,9 @@ Bad input is a result, never an exception. Once a parser has finished or hit
 an error, it keeps answering the same until you reset it. A reset doesn't
 tell your handler: if your context holds a half-built value, reset it too.
 
+`make-json-result` makes a result, for code that wraps parsers, as
+[sequence.md](sequence.md)'s reader does.
+
 The error codes are `unexpected-byte`, `unexpected-eof`, `invalid-number`,
 `invalid-escape`, `invalid-surrogate`, `invalid-utf8`, `control-character`,
 `nesting-too-deep` and `trailing-garbage`, plus any code a handler stops
@@ -107,5 +110,15 @@ with.
   them: see [tree.md](tree.md).
 - `indent` is for the writer, and the parser ignores it: see
   [writer.md](writer.md).
+- `stream`: a parser reads one value, unless `stream` is `values`. Then
+  it reads any number, none included:
+  - an object, an array or a string needs nothing after it, so `[]{}` is
+    two values;
+  - a number, `true`, `false` or `null` needs whitespace or the end of
+    the input after it, so `1-2` is `unexpected-byte` at the `-`.
+
+  `lines` and `seq` read one value: [sequence.md](sequence.md) frames
+  them.
+- `blank-lines` is for [sequence.md](sequence.md)'s reader.
 
 A bad option raises an assertion violation when the options are made.
