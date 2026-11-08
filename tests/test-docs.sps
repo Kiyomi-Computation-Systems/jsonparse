@@ -2,13 +2,18 @@
 ;;; tests/test-docs.sps: every name a (jsonparse ...) library exports is in
 ;;; the docs, M1's exit criterion of a documented API.
 ;;;
-;;;   1. the libraries are the eight under src/jsonparse, each read as data,
-;;;      and each export list holds a name known to be there
-;;;   2. every exported name appears in some docs/*.md file as a whole name:
-;;;      neither character beside it may continue a Scheme identifier, so
-;;;      json-error? doesn't count as json-error
+;;;   1. the libraries are the eight under src/jsonparse, each read as data;
+;;;      each export list holds a name known to be there, and as many names
+;;;      as it did
+;;;   2. docs/reference.md has exactly one entry for each exported name and
+;;;      none for anything else, and each entry names exactly the libraries
+;;;      that export it
+;;;   3. every exported name also appears in a guide, a docs/*.md file other
+;;;      than the reference, as a whole name: neither character beside it
+;;;      may continue a Scheme identifier, so json-error? doesn't count as
+;;;      json-error
 ;;;
-;;; A failing check lists each library and name that no doc mentions.
+;;; A failing check lists what differs.
 (import (rnrs)
         (srfi :64)
         (jsonparse-testing)
@@ -61,11 +66,67 @@
 (define export-lists
   (map (lambda (lib) (exports (string-append src-dir "/" lib ".sls"))) libraries))
 
-;; The docs, one string.
+;; The guides, one string: every docs/*.md but the reference.
 (define docs
   (apply string-append
          (map (lambda (f) (read-text (string-append docs-dir "/" f)))
-              (corpus-files docs-dir ".md"))))
+              (filter (lambda (f) (not (string=? f "reference.md")))
+                      (corpus-files docs-dir ".md")))))
+
+;; --- the reference ---------------------------------------------------------------
+
+;; lines : String -> (Listof String)
+(define (lines text)
+  (let loop ((i 0) (start 0) (acc '()))
+    (cond ((= i (string-length text))
+           (reverse (if (< start i) (cons (substring text start i) acc) acc)))
+          ((char=? (string-ref text i) #\newline)
+           (loop (+ i 1) (+ i 1) (cons (substring text start i) acc)))
+          (else (loop (+ i 1) start acc)))))
+
+(define (prefix? p s)
+  (and (>= (string-length s) (string-length p))
+       (string=? p (substring s 0 (string-length p)))))
+
+;; between : String Char Nat -> (Option (Pair String Nat))
+;; The text from after the first C at or after I to the next C, and where
+;; that next C is.
+(define (between s c i)
+  (let find ((a i))
+    (cond ((>= a (string-length s)) #f)
+          ((char=? (string-ref s a) c)
+           (let close ((b (+ a 1)))
+             (cond ((>= b (string-length s)) #f)
+                   ((char=? (string-ref s b) c) (cons (substring s (+ a 1) b) b))
+                   (else (close (+ b 1))))))
+          (else (find (+ a 1))))))
+
+;; available : String -> (Listof String)
+;; The library stems a line names in backquotes, as `(jsonparse easy)`.
+(define (available line)
+  (let loop ((i 0) (acc '()))
+    (let ((q (between line #\` i)))
+      (if (not q)
+          (reverse acc)
+          (loop (+ (cdr q) 1)
+                (let ((t (car q)))
+                  (if (and (prefix? "(jsonparse " t) (char=? (string-ref t (- (string-length t) 1)) #\)))
+                      (cons (substring t 11 (- (string-length t) 1)) acc)
+                      acc)))))))
+
+;; entries : (Listof (Pair String (Listof String)))
+;; Each reference entry, a ### heading's name in backquotes, with the
+;; libraries its Available from line names.
+(define entries
+  (let loop ((ls (lines (read-text (string-append docs-dir "/reference.md")))) (acc '()))
+    (cond ((null? ls) (reverse acc))
+          ((prefix? "### `" (car ls))
+           (loop (cdr ls) (cons (cons (car (between (car ls) #\` 0)) '()) acc)))
+          ((and (prefix? "**Available from:**" (car ls)) (pair? acc))
+           (loop (cdr ls) (cons (cons (caar acc) (append (cdar acc) (available (car ls)))) (cdr acc))))
+          (else (loop (cdr ls) acc)))))
+
+(define (sorted-strings l) (list-sort string<? l))
 
 ;; constituent? : Char -> Boolean, a character that may continue an identifier
 (define (constituent? c)
@@ -105,7 +166,29 @@
   '(("easy" . 26) ("error" . 9) ("options" . 10) ("parser" . 15) ("sequence" . 6) ("string" . 11) ("tree" . 6) ("writer" . 3))
   (map (lambda (lib names) (cons lib (length names))) libraries export-lists))
 
-(test-equal "every exported name is in the docs"
+(define exported
+  (let ((all (apply append (map (lambda (names) (map symbol->string (filter symbol? names))) export-lists))))
+    (let loop ((l (sorted-strings all)) (acc '()))
+      (cond ((null? l) (reverse acc))
+            ((and (pair? acc) (string=? (car l) (car acc))) (loop (cdr l) acc))
+            (else (loop (cdr l) (cons (car l) acc)))))))
+
+;; The libraries that export NAME, sorted.
+(define (exporters name)
+  (sorted-strings
+   (apply append (map (lambda (lib names) (if (memq (string->symbol name) names) (list lib) '()))
+                      libraries export-lists))))
+
+(test-equal "reference: every exported name has exactly one entry, and nothing else has one"
+  exported
+  (sorted-strings (map car entries)))
+
+(test-equal "reference: each entry names exactly the libraries that export it"
+  '()
+  (filter (lambda (t) (not (equal? (cadr t) (caddr t))))
+          (map (lambda (e) (list (car e) (exporters (car e)) (sorted-strings (cdr e)))) entries)))
+
+(test-equal "every exported name is in a guide"
   '()
   (apply append
          (map (lambda (lib names)

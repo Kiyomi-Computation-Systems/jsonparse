@@ -124,3 +124,6 @@ Each call makes a new parser, or a new reader for a stream. For many small
 documents, reuse a builder from [tree.md](tree.md). For input that arrives
 in pieces, feed a builder or a parser as the pieces come, or a reader from
 [sequence.md](sequence.md) for a stream.
+
+[reference.md](reference.md) lists every binding of every library, with its
+signature.

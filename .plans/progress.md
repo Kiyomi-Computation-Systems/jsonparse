@@ -96,9 +96,12 @@ newest first.
       subnormal and overflow edges. Their bits came from Python's `float()`
       on the host, and the suite checks each against its text's exact value,
       rounded by hand.
-  - **`docs`:** every name a `(jsonparse ...)` library exports is named in
-    `docs/`, and each library's count of exports is pinned. The docs now
-    name the 19 that were missing.
+  - **`docs/reference.md`:** an entry for each of the 74 bindings, with
+    its signature and the libraries that export it, in the siblings' form.
+  - **`docs`:** the reference has exactly one entry for each exported name,
+    naming exactly the libraries that export it, and none for anything
+    else. Each name is also in a guide, and each library's count of exports
+    is pinned. The guides now name the 19 that were missing.
   - **Wider lanes:**
     - fuzzing seeds from every corpus of JSON text, 406 files;
     - SRFI 180's files are read in chunks of 1 to 31 bytes, and the small
@@ -109,9 +112,9 @@ newest first.
     and the global constraints.
 - **Evidence:**
   - `scripts/guix-env make test` runs 35 suites in about 70 s. The new
-    ones pass 6, 14 and 5.
+    ones pass 6, 14 and 7.
   - **Every new assertion was watched fail:** 16 mutants of the library
-    and 15 of the suites and the fixture.
+    and 21 of the suites, the fixture and the docs.
   - **The float64 lane catches a reader that is one ulp off,** even only
     past 17 digits; one that keeps 20 significant digits; and one that
     rounds twice below the least normal.

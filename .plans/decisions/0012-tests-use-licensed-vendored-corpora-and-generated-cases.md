@@ -34,9 +34,11 @@
 >   exceptions is empty.
 > - **A suite whose flonum expectations come from Chez says so in its
 >   header,** since they share the converter the library uses.
-> - **The plan's exit criterion of a documented API is checked:**
->   `tests/test-docs.sps` fails unless every name a `(jsonparse ...)`
->   library exports is named in `docs/`.
+> - **The plan's exit criterion of a documented API is checked.**
+>   `docs/reference.md` has one entry for each name a `(jsonparse ...)`
+>   library exports, naming the libraries that export it, and none for
+>   anything else. Each name is also in a guide. `tests/test-docs.sps`
+>   holds both.
 >
 > Decision 5's methods reach the new files:
 > - nativejson-benchmark's files join the parser, number, tree and easy
