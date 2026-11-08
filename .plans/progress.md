@@ -35,12 +35,14 @@ newest first.
   three of four criteria met; the docs left 19 exported names out. Two
   lanes lacked their corpora, and fuzzing covered one corpus.
 - **Slice 8, closing M1, is done** (close-out below). The slice's review
-  re-audited M1 from scratch, and every lane and exit criterion is met. A
-  release, with `README.org`'s usage and `CHANGELOG.md`'s first entry, is
-  not planned yet.
+  re-audited M1 from scratch, and every lane and exit criterion is met.
 - **Slice 9, the docs site, is done** (close-out below). `docs/` renders to
   a site as the siblings' do, and Pages publishes it at the first release
   tag.
+- **Slice 10, the first release, is done** (close-out below). The owner chose
+  on 2026-11-08 to release 0.1.0 after M1, ahead of the plan's M5
+  (ADR-0022). The tag follows the merge, and the Akku submission waits
+  for the owner.
 
 ## Next
 
@@ -79,8 +81,87 @@ newest first.
 9. **The docs site** (done, close-out below): `docs/` rendered by circuit's
    generator, checked on every pull request, and published to GitHub Pages
    on a release tag (ADR-0021).
+10. **The first release** (done, close-out below): 0.1.0, packaged for Akku
+    with Akku 1.2.0 and checked by installing it as a consumer would
+    (ADR-0022). Publishing to Akku, M5's Guix package and its chez-json note
+    wait.
+
+**Then, by the plan:** M3, performance, starting with the benchmarks
+(ADR-0013); M2 only if its gain still justifies a byte-machine ABI bump
+after M3; M4, YAJL's options; and the rest of M5.
 
 ## Close-outs
+
+### Slice 10: the first release (2026-11-08)
+
+- **Landed:**
+  - **0.1.0** (ADR-0022): `Akku.manifest`, a Keep a Changelog
+    `CHANGELOG.md`, the home page's Status, `README.org`'s install steps
+    and taste, and `docs/installing.md` in the nav. Semantic versioning,
+    with a new byte-machine runtime ABI meaning a new minor version.
+  - **`make check-release`,** in `make test`: `Akku.manifest`, the newest
+    `CHANGELOG.md` release and the home page's Status name one version.
+  - **Akku 1.2.0,** pinned by sha256 in `scripts/akku-tool.lock`, fetched by
+    `make akku-deps` and run by `scripts/akku` with its data and cache
+    under `build/`. Its signature is Gwen Weinholt's key, the same at
+    keys.openpgp.org and keyring.debian.org.
+  - **`make check-akku`:** git writes the archives Akku would serve, on the
+    host or in CI; the install runs offline, in the container on a Guix
+    host. It checks the archive is the working tree's and ships no design
+    records, that exactly `src/`'s 9 libraries and the `LICENSE` land, and
+    that a consumer reads, builds and writes JSON on Akku's path alone. CI's
+    `linux` job runs it on both arches.
+  - **`.akkuignore` in circuit's form.** Only `site` and `grammar` change
+    what lands; the rest are recorded as guards.
+  - **`scripts/akku-publish`,** for the owner: a fresh clone at the tag,
+    the version checked, signing forced to the release key and checked on a
+    probe before and on the submission after.
+  - **Records:** ADR-0022, revision notes on ADR-0003 and ADR-0021, and the
+    global constraints' Releases section.
+- **Evidence:**
+  - `scripts/guix-env make test` runs 36 suites; `test-check-release`
+    passes 23. `make check-site` passes 81 and 19, and `make check-akku`,
+    `make site` and `make check-release` are green.
+  - **Every new check was watched fail:** 9 mutants of `check-akku`, 14 of
+    `check-release`, and `json->string` and `string->json` dropped from
+    `easy.md` for `test-docs`. Without `tests` or `vendor`, `.akkuignore`
+    installs the same.
+  - `check-release` caught its own crash on the empty `CHANGELOG.md`, and
+    the suite gained the case before the fix.
+  - Akku 1.2.0 installed a real package from the live index on the host,
+    making `Akku.manifest` in an empty directory.
+- **Review:** an adversarial review (Opus) found:
+  - **a defect:** `akku-publish` never checked that the tag's
+    `Akku.manifest` gives the version it publishes. Akku publishes the
+    version the tag's manifest gives, as an "untagged release";
+  - **six gaps:**
+    - `test-docs` counted `installing.md` as a guide;
+    - seven `check-release` mutants passed its suite;
+    - `check-akku` never checked the archive was the working tree;
+    - `R6RS_PATH` reached the consumer;
+    - `akku-publish` called a submission the archive refused a success;
+    - `akku-publish` has no committed test;
+  - **three false claims:** M2 and M3 each bumping the ABI (they share one);
+    a guide for each library; and the changelog's number claims without
+    their conditions;
+  - **nits:**
+    - CI's comments missed `check-release`;
+    - Akku's index landed in the pinned tree;
+    - BSD sed reads no `\t`;
+    - macOS names Chez `chez`;
+    - the publish script found a missing Akku late;
+    - the release procedure lacked its version and install checks.
+
+  All are fixed but two. The publish script's test comes before
+  publishing (ADR-0022 Decision 8), and CI's Akku download stays uncached.
+- **Known:**
+  - **Publishing to Akku waits for the owner.** The docs say the package is
+    coming; after publishing, they say `akku install jsonparse`, and Pages
+    runs by hand from `main`.
+  - **The `CHANGELOG.md` date is the tag's by hand.** Nothing checks it.
+  - **CI downloads Akku from gitlab.com on every run,** so GitLab down is a
+    red `linux` job.
+  - **M5's Guix package and chez-json note wait.**
 
 ### Slice 9: the docs site (2026-11-08)
 

@@ -6,8 +6,8 @@ name: CI
 #   byte-machine and chez-srfi with `make submodules`, holds them at their
 #   pins with `make check-pins`, builds Chez at its floor (once, then
 #   cached), and runs `make test`, which runs check-help, check-chez,
-#   check-suites, check-versions, check-corpora, check-imports and every
-#   suite. No benchmarks (ADR-0013).
+#   check-suites, check-versions, check-release, check-corpora,
+#   check-imports and every suite; then `make check-akku`. No benchmarks (ADR-0013).
 # - `site`, on amd64: the docs site's checks and build, as pages.yml runs
 #   them (ADR-0021).
 #
@@ -91,15 +91,15 @@ jobs:
         run: make check-pins
 
       # A C compiler and make for Chez, which scripts/ci/build-chez.sh
-      # configures with no X11 or curses; curl, which fetches Chez; coreutils
-      # is GNU timeout, which `make test` runs under, and sha256sum, which
-      # checks the Chez tarball. Most are already on the image: naming them
-      # keeps the job from depending on that.
+      # configures with no X11 or curses; curl, which fetches Chez and Akku;
+      # coreutils is GNU timeout, which `make test` runs under, and sha256sum,
+      # which checks both tarballs; xz-utils unpacks Akku's. Most are already
+      # on the image: naming them keeps the job from depending on that.
       - name: Install toolchain
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends \
-            build-essential git curl coreutils
+            build-essential git curl coreutils xz-utils
 
       # The OS release for the Chez cache key, read off the machine rather than
       # restated from runs-on (which a bump could forget), so a new image misses
@@ -175,11 +175,20 @@ jobs:
           $CHEZ --version 2>&1 || true
           timeout --version | head -1
 
-      # check-help, check-chez, check-suites, check-versions, check-imports once src/
-      # exists, then every suite as its own process under timeout. `deps`
-      # links SRFI-64 first.
+      # check-help, check-chez, check-suites, check-versions, check-release,
+      # check-corpora, check-imports once src/ exists, then every suite as its
+      # own process under timeout. `deps` links SRFI-64 first.
       - name: Test
         run: make test
+
+      # The Akku package (ADR-0022): Akku 1.2.0 as scripts/akku-tool.lock pins
+      # it, then the package installed as a consumer would, from the archives
+      # Akku would serve, and a consumer run on Akku's library path alone.
+      - name: Get Akku 1.2.0
+        run: make akku-deps
+
+      - name: Check the Akku package
+        run: make check-akku
 
   # The docs site (ADR-0021): the Pages workflow's build, on every pull
   # request, so a release tag's deploy does not fail first. apt's Chez and

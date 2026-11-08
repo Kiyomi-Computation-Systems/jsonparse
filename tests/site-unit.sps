@@ -275,8 +275,8 @@
 
 ;; --- pages -----------------------------------------------------------
 (test-equal "the home page comes first, the rest in the home page's Read next order"
-  '("README.md" "easy.md" "tree.md" "writer.md" "sequence.md" "parser.md"
-    "string.md" "reference.md")
+  '("README.md" "installing.md" "easy.md" "tree.md" "writer.md" "sequence.md"
+    "parser.md" "string.md" "reference.md")
   (map car pages))
 
 ;; --- template --------------------------------------------------------

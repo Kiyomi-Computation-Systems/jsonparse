@@ -1,0 +1,33 @@
+#!/bin/sh
+# scripts/akku ARGS...: runs Akku 1.2.0, as `make akku-deps` unpacked it
+# under build/akku-tool/, on $CHEZ (ADR-0022). Guix and the siblings have
+# 1.1.0, which knows only the archive's old signing key.
+#
+# Akku reads its archive keys from $XDG_DATA_HOME/akku/keys.d, writes its
+# package index beside them, and keeps its cache in $XDG_CACHE_HOME/akku. Both
+# point into build/akku-tool/, outside the unpacked tree, which stays as its
+# sha256 pins it: each run copies the release's keys into data/akku/keys.d.
+# It reads and writes nothing under HOME. It runs from source, as the release's
+# install.sh would have it run, without compiling: compiled libraries would
+# tie the tree to one Chez version, and the host's and the container's
+# differ.
+set -eu
+
+root=$(cd "$(dirname "$0")/.." && pwd)
+tool=$root/build/akku-tool/akku/akku-1.2.0.src
+
+if [ ! -f "$tool/lib/akku/bin/akku.sps" ]; then
+  echo "akku: no Akku 1.2.0 at $tool. Run 'make akku-deps' on the host, where the network is." >&2
+  exit 2
+fi
+
+data=$root/build/akku-tool/data
+mkdir -p "$data/akku/keys.d"
+cp "$tool"/share/akku/keys.d/* "$data/akku/keys.d/"
+
+XDG_DATA_HOME=$data
+XDG_CACHE_HOME=$root/build/akku-tool/cache
+CHEZSCHEMELIBDIRS=$tool/lib/akku/lib
+export XDG_DATA_HOME XDG_CACHE_HOME CHEZSCHEMELIBDIRS
+unset CHEZSCHEMELIBEXTS
+exec "${CHEZ:-scheme}" --program "$tool/lib/akku/bin/akku.sps" "$@"

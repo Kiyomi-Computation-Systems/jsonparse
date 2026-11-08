@@ -1,9 +1,14 @@
 # ADR-0003: Portable R6RS libraries, Chez tooling
 
-- **Status:** Accepted
+- **Status:** Accepted, revised on 2026-11-08
 - **Date:** 2026-10-30
 - **Scope:** everything under `src/`, and the build, test and benchmark tooling
 - **Related:** byte-machine's README, *Portability*; AGENTS.md, *Architecture & portability*
+
+> **Revision (2026-11-08, slice 10).** ADR-0022 lists more in `.akkuignore`,
+> in circuit's form: `.claude`, `.plans`, `.superpowers`, `AGENTS.md`,
+> `build`, `grammar`, `site`, `tests` and `vendor`. `make check-akku` now
+> exists, and runs with Akku 1.2.0.
 
 ## Context
 

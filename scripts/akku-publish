@@ -1,0 +1,86 @@
+#!/bin/sh
+# scripts/akku-publish: publishes the release Akku.manifest names to the Akku
+# archive, from a fresh clone at its tag, signed with the Kiyomi Computation
+# Systems release key (ADR-0022). Run it on the host, by hand, once the tag
+# is pushed: it needs git, gpg with the release key, and the network.
+#
+#   1. The version is Akku.manifest's, and the tag is vVERSION, which must be
+#      on GitHub. Akku 1.2.0 must be unpacked (make akku-deps).
+#   2. The repository is cloned fresh into build/akku-publish/, at the tag,
+#      and the clone's Akku.manifest must give the same version: akku
+#      publishes the version the clone names. `akku publish` refuses a git
+#      worktree, whose .git is a file, and a clone gives it the https remote
+#      it records.
+#   3. `akku publish` signs with a bare `gpg --sign`, so gpg's default key,
+#      and it shows which key only after it has signed, when nothing can stop
+#      the upload. A gpg first on PATH adds --local-user with the release key.
+#      Before publishing, that gpg signs a scratch file, and the signature
+#      must be the release key's.
+#   4. Akku 1.2.0 (scripts/akku) shows the index entry and asks before it
+#      signs and submits. Answer y to submit.
+#   5. The signature it submitted must be the release key's. Akku uploads
+#      with curl and doesn't fail on an HTTP error, so read the archive's
+#      replies in its output, and once the index lists the version, check
+#      that `akku install jsonparse` works in an empty directory.
+set -eu
+
+release_key=CC2923E50902E936049B696B9EBA259B8EAC5130
+repo=https://github.com/Kiyomi-Computation-Systems/jsonparse.git
+
+fail() { echo "akku-publish: $*" >&2; exit 1; }
+
+root=$(cd "$(dirname "$0")/.." && pwd)
+work=$root/build/akku-publish
+
+for tool in git gpg; do
+  command -v "$tool" >/dev/null 2>&1 || fail "$tool not found: this runs on the host"
+done
+real_gpg=$(command -v gpg)
+[ -f "$root/build/akku-tool/akku/akku-1.2.0.src/lib/akku/bin/akku.sps" ] ||
+  fail "no Akku 1.2.0 under build/akku-tool: run 'make akku-deps' first"
+
+version=$(sed -n 's/^(akku-package ("jsonparse" "\([^"]*\)").*/\1/p' "$root/Akku.manifest")
+[ -n "$version" ] || fail "Akku.manifest gives jsonparse no version"
+tag=v$version
+git ls-remote --exit-code --tags "$repo" "refs/tags/$tag" >/dev/null ||
+  fail "$repo has no tag $tag: tag the release and push the tag first"
+
+# signer FILE: the primary key fingerprint that made FILE.sig, from gpg's
+# VALIDSIG status line, whose last field it is.
+signer() {
+  "$real_gpg" --status-fd 1 --verify "$1.sig" "$1" 2>/dev/null |
+    awk '$2 == "VALIDSIG" { print $NF }'
+}
+
+rm -rf "$work"
+mkdir -p "$work/bin"
+cat > "$work/bin/gpg" <<EOF
+#!/bin/sh
+exec "$real_gpg" --local-user $release_key "\$@"
+EOF
+chmod 755 "$work/bin/gpg"
+
+# 3. The wrapper signs with the release key, or nothing is published.
+echo "akku-publish: checking that the gpg akku will run signs with $release_key"
+echo "jsonparse $version" > "$work/probe"
+PATH=$work/bin:$PATH gpg --sign --detach --no-armor "$work/probe"
+[ "$(signer "$work/probe")" = "$release_key" ] ||
+  fail "the probe was not signed by $release_key; nothing was published"
+
+# 2. A fresh clone at the tag.
+git clone --quiet --branch "$tag" "$repo" "$work/jsonparse"
+cloned=$(sed -n 's/^(akku-package ("jsonparse" "\([^"]*\)").*/\1/p' "$work/jsonparse/Akku.manifest")
+[ "$cloned" = "$version" ] ||
+  fail "$tag's Akku.manifest gives jsonparse '$cloned', not $version; nothing was published"
+
+# 4. Publish.
+cd "$work/jsonparse"
+PATH=$work/bin:$PATH "$root/scripts/akku" publish
+
+# 5. What was submitted.
+record=jsonparse_$version.akku
+[ -f "$record.sig" ] || fail "no $record.sig: akku published nothing"
+[ "$(signer "$record")" = "$release_key" ] ||
+  fail "$record.sig was not made by $release_key: tell the archive's maintainer"
+echo "akku-publish: sent jsonparse $version from $tag, signed by $release_key."
+echo "akku-publish: read the archive's replies above; once the index lists $version, check 'akku install jsonparse' in an empty directory."

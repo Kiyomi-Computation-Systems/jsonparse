@@ -60,7 +60,7 @@ TIMEOUT ?= $(or $(shell command -v timeout 2>/dev/null),$(shell command -v gtime
 
 # One physical line: check-help reads it with awk, and fails if it ends in
 # a backslash.
-.PHONY: help check-help check-guix check-guix-inside submodules check-pins check-chez deps dev run generate test check-suites check-imports check-versions check-corpora site-deps site check-site check-site-deps clean
+.PHONY: help check-help check-guix check-guix-inside submodules check-pins check-chez deps dev run generate test check-suites check-imports check-versions check-release check-corpora site-deps site check-site check-site-deps akku-deps check-akku check-akku-inside clean
 
 .DEFAULT_GOAL := help
 
@@ -215,7 +215,7 @@ generate: ## Regenerate src/generated/jsonparse.sls from grammar/
 # check-help, check-suites and, once src/ exists, check-imports each stop
 # it, so the first library under src/ is audited without anyone
 # remembering to.
-test: deps check-help check-chez check-suites check-versions check-corpora $(if $(wildcard src),check-imports) ## Run every tests/test-*.sps under timeout; fail if one fails or hangs, or none exists
+test: deps check-help check-chez check-suites check-versions check-release check-corpora $(if $(wildcard src),check-imports) ## Run every tests/test-*.sps under timeout; fail if one fails or hangs, or none exists
 	@scripts/require-tools "$(GOAL)" $(TIMEOUT) $(CHEZ)
 	@if [ -z "$(SUITES)" ]; then \
 	  echo "test: no suites: nothing matches tests/test-*.sps" >&2; \
@@ -260,6 +260,13 @@ check-imports: deps ## Fail unless every library under src/ imports only what th
 check-versions: deps ## Fail unless the Akku floor, Akku.lock and the vendored byte-machine's version agree
 	@scripts/require-tools "$(GOAL)" $(CHEZ)
 	@$(CHEZ) --libdirs $(TEST_LIBDIRS) --program tests/check-versions.sps
+
+# Fails unless Akku.manifest's version for jsonparse, CHANGELOG.md's newest
+# release and the home page's Status name one version
+# (tests/check-release.sps, ADR-0022).
+check-release: deps ## Fail unless Akku.manifest, CHANGELOG.md's newest release and the home page's Status name one version
+	@scripts/require-tools "$(GOAL)" $(CHEZ)
+	@$(CHEZ) --libdirs $(TEST_LIBDIRS) --program tests/check-release.sps
 
 # Fails unless every directory under tests/corpus/ carries its upstream
 # LICENSE and a SOURCE with the six keys, and no JSON_checker file sits below
@@ -317,6 +324,30 @@ check-site: site-deps deps ## Test the site generator, then render docs/ in memo
 
 check-site-deps: ## Test scripts/fetch-akku-lock offline, against a local archive and lock of its own
 	@sh tests/fetch-akku-lock.sh
+
+# --- the Akku package ----------------------------------------------------------
+# Akku 1.2.0, the release for Chez Scheme, pinned by sha256 in
+# scripts/akku-tool.lock and run by scripts/akku (ADR-0022). Guix has 1.1.0,
+# which knows only the archive's old signing key. `make akku-deps` fetches it
+# on the host, where the network is, once and again after `make clean`.
+akku-deps: ## (host, and after make clean) Get Akku 1.2.0 as scripts/akku-tool.lock pins it
+	@AKKU_LOCK=scripts/akku-tool.lock AKKU_DEST=$(BUILD_DIR)/akku-tool sh scripts/fetch-akku-lock akku
+
+# Installs the package with Akku as a consumer would, and checks what lands
+# (tests/check-akku.sh). The archives Akku would serve need git, so they are
+# made here, on the host or in CI; the install needs neither git nor the
+# network, so on a Guix host it runs in the container, at the floor Chez.
+check-akku: ## (host) Install the package with Akku 1.2.0 as a consumer would, and check what lands
+	@scripts/require-tools "$(GOAL)" git
+	@sh tests/check-akku.sh archive $(BUILD_DIR)/check-akku
+	@if [ -z "$${GUIX_ENVIRONMENT:-}" ] && command -v guix >/dev/null 2>&1; then \
+	  scripts/guix-env make --no-print-directory check-akku-inside; \
+	else \
+	  $(MAKE) --no-print-directory check-akku-inside; \
+	fi
+
+check-akku-inside: check-chez ## Install the archives make check-akku wrote, offline, and run a consumer on Akku's library path
+	@CHEZ=$(CHEZ) sh tests/check-akku.sh install $(BUILD_DIR)/check-akku
 
 clean: ## Remove build/
 	rm -rf build

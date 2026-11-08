@@ -1,0 +1,8 @@
+#!r6rs ; -*- scheme -*-
+(import (akku format manifest))
+
+;; A comment naming another version: (akku-package ("jsonparse" "9.9.9"))
+(akku-package ("jsonparse" "3.14.x")
+  (synopsis "A lookalike of jsonparse's manifest")
+  (license "BSD-3-Clause")
+  (depends ("byte-machine" "^1.2.3")))

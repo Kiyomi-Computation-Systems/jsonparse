@@ -1,0 +1,13 @@
+#!r6rs ; -*- mode: scheme; coding: utf-8 -*-
+;; Akku 1.2.0 itself, the release for Chez Scheme, as `make akku-deps` fetches
+;; it with scripts/fetch-akku-lock (ADR-0022). Written by hand in Akku.lock's
+;; form, since it locks the tool, not a package. Its sha256 is the tarball
+;; Gwen Weinholt signed on 2026-10-25 (key 35C5 2CA4 9767 2B40 0D46 1793 DD83
+;; 9B74 8F10 AD4D, the same at keys.openpgp.org and keyring.debian.org).
+(import (akku format lockfile))
+(projects
+ ((name "akku")
+  (location
+   (url "https://gitlab.com/-/project/6808260/uploads/ebc12957cc18d9b196c9b3e9f7624150/akku-1.2.0.src.tar.xz"))
+  (content
+   (sha256 "c04010db22f8d29c307763f4fd79256522619c644b34894cc08a08933f6fe1af"))))
