@@ -5,8 +5,8 @@
 ;;; 1. The differential. The parser's trace (run-parser) must equal
 ;;;    machine->parser of the reference's trace (run-machine on the
 ;;;    generated machine, whose plain list stack answers `context`) on the
-;;;    same schedule and depth limit. Every JSONTestSuite file and every
-;;;    yajl case, and a few nesting shapes the corpus lacks, run under the
+;;;    same schedule and depth limit. Every JSONTestSuite file, every
+;;;    yajl case, every nativejson-benchmark round-trip file, and a few nesting shapes the corpus lacks, run under the
 ;;;    default limit and under 0, 1, 2 and 3:
 ;;;      - whole, and in chunks of 1, 2, 3, 5, 7, 13 and 64 bytes;
 ;;;      - files of at most 64 bytes under every schedule schedules-for
@@ -251,15 +251,16 @@
 
 ;; --- the corpus -----------------------------------------------------------------
 
-;; corpus : (Listof (Pair String Bytevector)), every JSONTestSuite file and
-;; every yajl case, by name.
+;; corpus : (Listof (Pair String Bytevector)), every JSONTestSuite file,
+;; every yajl case and every nativejson-benchmark round-trip file, by name.
 (define (files-in dir)
   (map (lambda (n) (cons (string-append dir "/" n) (file-bytes (string-append dir "/" n))))
        (corpus-files dir ".json")))
 
 (define corpus
   (append (files-in "tests/corpus/jsontestsuite/test_parsing")
-          (files-in "tests/corpus/yajl/cases")))
+          (files-in "tests/corpus/yajl/cases")
+          (files-in "tests/corpus/nativejson-benchmark/files")))
 
 ;; No corpus file of 64 bytes or less holds a value in a container nested in
 ;; the other kind, the one place where an answer from anywhere but the top

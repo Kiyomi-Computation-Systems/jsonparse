@@ -49,6 +49,7 @@ The options' `stream` picks the format:
 (json-reader-finish! r)                        ; the stream has ended
 (json-reader-record r)                         ; which record, counting from 1
 (json-reader-reset! r)                         ; ready for a new stream
+(json-reader? x)                               ; is x a reader?
 ```
 
 - **`(on-value v)`** gets each value, in order.

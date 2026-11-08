@@ -47,6 +47,7 @@ can hand those three over as they are.
 (json-assembler-number-chars! a bv start end)  ; from number-chars
 (json-assembler-number! a)                     ; from number-end
 (json-assembler-reset! a)                      ; drop a half-built value
+(json-assembler? x)                            ; is x an assembler?
 ```
 
 - **Keys and strings work the same way.** Take a key in `key-end` and a

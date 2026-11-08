@@ -1519,15 +1519,24 @@
     (close-port p)
     (if (eof-object? b) (bv) b)))
 
+;; Each file is read whole, and in chunks of 1 to 31 bytes and of 64
+;; (ADR-0012).
+(define srfi-chunk-sizes
+  (let loop ((k 31) (acc '(64)))
+    (if (= k 0) (cons #f acc) (loop (- k 1) (cons k acc)))))
+
 (define (srfi-chunk-cases! name o skip? expected)
   (let ((b (file-bytes name)))
     (for-each
-     (lambda (k label)
-       (chk (string-append "srfi-180 / " name " / " label)
+     (lambda (k)
+       (chk (string-append "srfi-180 / " name " / "
+                           (if k (string-append "in chunks of " (number->string k)) "read whole"))
             expected
             (play o skip? (if k (sized b k) (whole b)))))
-     '(#f 1 7 64)
-     '("read whole" "in chunks of 1" "in chunks of 7" "in chunks of 64"))))
+     srfi-chunk-sizes)
+    (chk (string-append "srfi-180 / " name " / every split, and every pair of splits for a file of 40 bytes or less")
+         '()
+         (cdr (chunking-mismatches name o skip? b expected)))))
 
 (define ab '((("a" . 1)) (("b" . 2))))
 

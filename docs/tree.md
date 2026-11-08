@@ -30,6 +30,7 @@ shorter.
 (json-builder-finish! b)               ; no more input
 (json-builder-value b)                 ; the value
 (json-builder-reset! b)                ; ready for the next document
+(json-builder? x)                      ; is x a builder?
 ```
 
 - **Feed and finish return the parser's results:** a status, a code and a

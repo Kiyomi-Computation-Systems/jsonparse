@@ -30,7 +30,14 @@ newest first.
 - **Slice 5, the writer, is done** (close-out below).
 - **Slice 6, the easy layer, is done** (close-out below).
 - **Slice 7, streams of values, is done** (close-out below). Every library
-  the plan's M1 lists now exists. Nothing is planned after it yet.
+  the plan's M1 lists now exists.
+- **An audit of M1's exit criteria and test lanes** (2026-11-08) found
+  three of four criteria met; the docs left 19 exported names out. Two
+  lanes lacked their corpora, and fuzzing covered one corpus.
+- **Slice 8, closing M1, is done** (close-out below). The slice's review
+  re-audited M1 from scratch, and every lane and exit criterion is met. A
+  release, with `README.org`'s usage and `CHANGELOG.md`'s first entry, is
+  not planned yet.
 
 ## Next
 
@@ -61,8 +68,84 @@ newest first.
 7. **`(jsonparse sequence)`** (done, close-out below): JSON Lines and
    NDJSON, RFC 7464 and whitespace-separated values, and the easy layer's
    stream procedures (ADR-0014, ADR-0020).
+8. **Closing M1** (done, close-out below): the corpora, lanes and docs
+   check that the audit of 2026-11-08 found missing (ADR-0012).
 
 ## Close-outs
+
+### Slice 8: closing M1 (2026-11-08)
+
+- **Landed:**
+  - **Two corpora** (ADR-0012), vendored unchanged:
+    - nativejson-benchmark's 27 round-trip files, MIT;
+    - parse-number-fxx-test-data's `more-test-cases.txt` and
+      `lemire-fast-float.txt`, Apache-2.0. The repository has no `NOTICE`,
+      so none is owed; its `AUTHORS` and fast_float's provenance are in the
+      corpus's `LICENSE`.
+  - **`roundtrip`:** reading then writing gives back every file's bytes,
+    in `text` mode, `flonum` mode and the defaults, in one feed and in
+    chunks of 1 to 31 bytes. No file needs an exception.
+  - **`float64`:** 3,353 corpus texts and 24 hard cases of our own read in
+    `flonum` mode as exactly their float64 bits, or `number-out-of-range`
+    where those are infinite.
+    - Integer texts are also read with `e0` after them, so they meet the
+      flonum path too.
+    - Every text is also read with `-` before it, inside an array, a byte at
+      a time, and at the default digit limit.
+    - The hard cases need digits out to the 800th, or sit on ties at the
+      subnormal and overflow edges. Their bits came from Python's `float()`
+      on the host, and the suite checks each against its text's exact value,
+      rounded by hand.
+  - **`docs/reference.md`:** an entry for each of the 74 bindings, with
+    its signature and the libraries that export it, in the siblings' form.
+  - **`docs`:** the reference has exactly one entry for each exported name,
+    naming exactly the libraries that export it, and none for anything
+    else. Each name is also in a guide, and each library's count of exports
+    is pinned. The guides now name the 19 that were missing.
+  - **Wider lanes:**
+    - fuzzing seeds from every corpus of JSON text, 406 files;
+    - SRFI 180's files are read in chunks of 1 to 31 bytes, and the small
+      ones at every split and pair;
+    - nativejson-benchmark's files join the parser, number, tree and easy
+      suites' corpus.
+  - **Records:** ADR-0012's revision, which also corrects its decisions,
+    and the global constraints.
+- **Evidence:**
+  - `scripts/guix-env make test` runs 35 suites in about 70 s. The new
+    ones pass 6, 14 and 7.
+  - **Every new assertion was watched fail:** 16 mutants of the library
+    and 21 of the suites, the fixture and the docs.
+  - **The float64 lane catches a reader that is one ulp off,** even only
+    past 17 digits; one that keeps 20 significant digits; and one that
+    rounds twice below the least normal.
+- **Review:** an adversarial review re-audited M1 and found:
+  - **two gaps:**
+    - the corpus files passed a reader keeping 20 significant digits and
+      one rounding twice in the subnormal range. Both suites that caught
+      them took their expectations from Chez. The hard cases now catch
+      both;
+    - `docs` passed a reader that skipped each export clause's first name.
+      The pinned counts catch it.
+  - **five false claims:**
+    - that Decision 5's methods reached every corpus;
+    - a `NOTICE` required;
+    - two counts in this ledger;
+    - the largest file's size;
+    - two constraints without their record.
+
+    All are fixed. The new files now get every split and pair, and the
+    parser, number, tree and easy differentials.
+- **Known:**
+  - **The interpreter meets the generated parser** on JSONTestSuite's files
+    directly, and on the other corpora only through fuzzing's mutants.
+  - **Fuzzing drives the parser, not the reader.** SRFI 180's RS-framed
+    files mostly fail at their first byte. The reader's mutation lane is
+    `sequence-property`.
+  - **`parser-alloc` doesn't record the interpreter's allocation,** which
+    byte-machine's decision 0040 records but doesn't gate.
+  - **The round-trip files hold no escapes, whitespace or nesting,** so that
+    lane checks numbers, signs and structure. The writer's and easy suites
+    check the rest.
 
 ### Slice 7: streams of values (2026-11-08)
 

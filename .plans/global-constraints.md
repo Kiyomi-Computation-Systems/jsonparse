@@ -212,6 +212,18 @@ record disagree, the record wins and this file gets fixed.
 - **Never vendor:**
   - JSON_checker files, in any copy (the JSON license);
   - data without a license (ADR-0012).
+- **Every corpus file of JSON text of at most 4 KB seeds the fuzzer,** and
+  is read in chunks of 1 to 31 bytes. A table of numbers, such as
+  parse-number-fxx's, isn't JSON text: its numbers are fed whole and a byte
+  at a time (ADR-0012).
+- **The float64 lane checks flonums against their bits,** from the files
+  and from our own hard cases, not against the Scheme reader the library
+  converts with. A suite whose flonum expectations come from Chez says so in
+  its header (ADR-0011, ADR-0012).
+- **Every name a `(jsonparse ...)` library exports has one entry in
+  `docs/reference.md`,** naming the libraries that export it, and is named
+  in a guide. Nothing else has an entry. `tests/test-docs.sps` holds that
+  (ADR-0012).
 - **`make test` needs no network and no comparator.** Benchmark files are
   fetched on the host, checked by SHA-256, and never committed (ADR-0012,
   ADR-0013).

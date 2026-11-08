@@ -74,7 +74,11 @@ the ones you need:
 (json-parser-feed! parser bv start end)     ; part of bv
 (json-parser-finish! parser)                ; no more input
 (json-parser-reset! parser)                 ; ready for a new document
+(json-parser-offset parser)                 ; bytes read since made or reset
 ```
+
+`json-parser?`, `json-handler?` and `json-result?` tell a parser, a
+handler and a result from anything else.
 
 Every feed and finish returns a result:
 
@@ -101,6 +105,12 @@ with.
 ```scheme
 (make-json-options 'depth-limit 64)
 ```
+
+`json-options?` tells an options record from anything else. Each option
+reads back with its own procedure: `json-options-depth-limit`,
+`json-options-number-mode`, `json-options-digit-limit`,
+`json-options-object-mode`, `json-options-null`, `json-options-indent`,
+`json-options-stream` and `json-options-blank-lines`.
 
 - `depth-limit`: how many objects and arrays may be open at once, from 0 to
   65535. The default is 512. Going deeper is the error `nesting-too-deep`.

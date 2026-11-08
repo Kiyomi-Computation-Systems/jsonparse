@@ -74,6 +74,11 @@ value leaves your port untouched:
 The part that was refused, such as the number or the key, is the
 condition's irritant, and `json-error-offset` is `#f`.
 
+`(jsonparse error)` also gives `(make-json-error reason offset)`, for code
+that raises errors of its own, and `&json-record-error`, a stream's error,
+with `make-json-record-error`, `json-record-error?` and `json-error-record`
+(see [easy.md](easy.md)).
+
 `(check-json value)` raises what `put-json` would, and writes nothing. Use
 it to check a value before you start a response.
 
