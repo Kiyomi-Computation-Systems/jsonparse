@@ -36,7 +36,7 @@ done
 # path: a host or guix-home copy that is a different store item is not the
 # pinned one.
 for mode in -lc -lic; do
-  for tool in scheme make timeout awk sed grep mktemp; do
+  for tool in scheme make timeout awk sed grep mktemp tar xz curl; do
     p=$(bash "$mode" "command -v $tool" 2>/dev/null | tail -n 1)
     want=$(readlink -f "$GUIX_ENVIRONMENT/bin/$tool")
     got=
@@ -101,14 +101,41 @@ else
   ok "no-git"
 fi
 
-# Assertion 7: the Makefile's own checks pass in here too: check-help, and
-# test, which runs every suite. check-pins is not one of them: it needs git,
-# so it runs on the host and in CI.
+# Assertion 7: CHEZ_CMARK_GFM_LIBS names the profile's cmark-gfm and its
+# extensions library, and Chez loads both by those paths, the core first,
+# as chez-cmark-gfm does (ADR-0021). Exit 3 means both loaded, 4 that a load
+# raised, and anything else that Chez itself failed.
+libs=${CHEZ_CMARK_GFM_LIBS:-}
+core=${libs%%:*}
+ext=${libs#*:}
+want="$GUIX_ENVIRONMENT/lib/libcmark-gfm.so:$GUIX_ENVIRONMENT/lib/libcmark-gfm-extensions.so"
+if [ "$libs" = "$want" ]; then
+  ok "cmark-gfm-variable ($libs)"
+else
+  bad "cmark-gfm-variable: CHEZ_CMARK_GFM_LIBS is '${libs:-unset}', expected $want"
+fi
+printf '(exit (guard (e (#t 4)) (load-shared-object "%s") (load-shared-object "%s") 3))\n' \
+  "$core" "$ext" | "$chez" -q >/dev/null 2>&1
+status=$?
+case "$status" in
+  3) ok "cmark-gfm-loads" ;;
+  4) bad "cmark-gfm-loads: Chez could not load '$core' then '$ext'" ;;
+  *) bad "cmark-gfm-loads: '${chez:-unset}' exited $status, expected 3" ;;
+esac
+
+# Assertion 8: the Makefile's own checks pass in here too: check-help; test,
+# which runs every suite; and check-site-deps, which runs the lock fetcher on
+# an archive of its own with tar, xz and curl. check-pins is not one of them:
+# it needs git, so it runs on the host and in CI. Nor is check-site: it needs
+# chez-cmark-gfm, which `make site-deps` fetches on the host.
 if ! make --no-print-directory check-help; then
   bad "check-help"
 fi
 if ! make --no-print-directory test; then
   bad "test"
+fi
+if ! make --no-print-directory check-site-deps; then
+  bad "check-site-deps"
 fi
 
 if [ "$fail" -eq 0 ]; then

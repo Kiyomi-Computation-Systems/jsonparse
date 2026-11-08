@@ -38,6 +38,9 @@ newest first.
   re-audited M1 from scratch, and every lane and exit criterion is met. A
   release, with `README.org`'s usage and `CHANGELOG.md`'s first entry, is
   not planned yet.
+- **Slice 9, the docs site, is done** (close-out below). `docs/` renders to
+  a site as the siblings' do, and Pages publishes it at the first release
+  tag.
 
 ## Next
 
@@ -71,7 +74,86 @@ newest first.
 8. **Closing M1** (done, close-out below): the corpora, lanes and docs
    check that the audit of 2026-11-08 found missing (ADR-0012).
 
+**After M1:**
+
+9. **The docs site** (done, close-out below): `docs/` rendered by circuit's
+   generator, checked on every pull request, and published to GitHub Pages
+   on a release tag (ADR-0021).
+
 ## Close-outs
+
+### Slice 9: the docs site (2026-11-08)
+
+- **Landed:**
+  - **The generator,** copied from circuit (ADR-0021): the eight libraries
+    under `site/`, the stylesheet, `build-site.sps`, the lock fetcher and
+    the three suites. Five libraries and the fetcher are byte for byte
+    circuit's; `pages`, `links` and `template` carry jsonparse's nav, URL
+    and name.
+  - **`docs/README.md`,** the home page: a taste, the ideas to keep in mind,
+    the libraries, and a "Read next" list that is the nav.
+  - **`make site`, `site-deps`, `check-site` and `check-site-deps`.**
+    chez-cmark-gfm 2.0.0 is a `depends/dev`, locked beside byte-machine and
+    fetched on the host. `make test` still needs neither it nor the network.
+  - **The container** gains cmark-gfm, `tar`, `xz` and `curl`.
+    `guix-env-enter` exports `CHEZ_CMARK_GFM_LIBS` and refuses a profile
+    without both libraries. `check-guix` holds the tools, the export, the
+    loads and `check-site-deps`.
+  - **CI's `site` job** checks and builds the site on every pull request,
+    and `pages.yml` deploys it on a `v*` tag or by hand from `main`. Pages
+    builds from Actions, and the `github-pages` environment takes `main` and
+    `v*` tags only, as the siblings' do.
+  - **Checks beyond circuit's:**
+    - `site-check`'s seventh: every link in the home page's Read next
+      section is the nav, in order, under its labels;
+    - `site-unit` pins jsonparse's description and keywords, and four
+      reference anchors as GitHub renders them;
+    - `test-docs` pins the guides, which leave out the home page as they
+      leave out the reference.
+  - **Records:** ADR-0021 and the global constraints, whose CI rule now
+    binds each job that runs Chez.
+- **Evidence:**
+  - `scripts/guix-env make test` runs 35 suites. `make check-site`:
+    `site-unit` passes 81, `site-render-unit` 19, and `site-check` all seven
+    invariants. `make site` writes 8 pages. `make check-guix` passes its 94
+    launcher cases and the container's self-test.
+  - **The site's anchors are GitHub's:** all 125 on the seven pages on
+    `main`, in order.
+  - **CI's `site` job, run in Docker on `ubuntu:24.04`** with apt's Chez
+    9.5.8: the machine type, `check-site-deps`, `site-deps`, `check-site`
+    and `site` all pass.
+  - **Every new check was watched fail:** 18 mutants of the site, its docs
+    and its suites; 4 of `guix-env-enter`; 1 of the lock fetcher; 2 of
+    `test-docs`; and the self-test given wrong library paths. A broken
+    template makes `make check-site` exit 2.
+- **Review:** an adversarial review (Opus) found:
+  - **a defect:** `--script /dev/stdin` can't seek a pipe on apt's Chez
+    9.5.8, so the machine-type step would have failed the `site` job and
+    every Pages build. Both use the REPL form now;
+  - **four gaps:**
+    - nothing held `test-docs`' exclusion of the home page;
+    - check 7 read only lines starting `- [`;
+    - `check-guix` held none of the container's new tools;
+    - the head's description and keywords were unpinned;
+  - **two false claims:** that the site needs only chez-srfi's checkout,
+    and an amd64-only job with no reason given;
+  - **nits:**
+    - the home page's `make run` printed nothing;
+    - "raises" was true of the easy layer only;
+    - a run by hand deploys only from `main`;
+    - `make clean` deletes the fetched tree.
+
+  All are fixed.
+- **Known:**
+  - **The home page says "Not released yet."** The release commit updates
+    its Status before the tag, or the live site says it of a release.
+  - **`build-site.sps` sits outside `.akkuignore`,** as circuit's does.
+    M5's `make check-akku` should confirm nothing outside `src/` reaches
+    the package.
+  - **The generator is copied, not shared:** a fix in one sibling reaches
+    the others by hand.
+  - **Nothing is published yet.** The site goes live at the first `v*` tag,
+    or a run by hand from `main`.
 
 ### Slice 8: closing M1 (2026-11-08)
 

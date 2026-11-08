@@ -67,4 +67,12 @@
   (packages->manifest
    (list chez-scheme-at-floor))
   (specifications->manifest
-   '("bash" "coreutils" "make" "grep" "sed" "gawk" "findutils" "diffutils"))))
+   '(;; `make site` renders docs/ through chez-cmark-gfm, which loads this C
+     ;; library by the absolute paths scripts/guix-env-enter exports
+     ;; (ADR-0021).
+     "cmark-gfm"
+     ;; What the Makefile and scripts shell out to. tar and xz unpack
+     ;; chez-cmark-gfm's archive, and curl fetches the file:// archive
+     ;; tests/fetch-akku-lock.sh makes: the container has no network.
+     "bash" "coreutils" "make" "grep" "sed" "gawk" "findutils" "diffutils"
+     "tar" "xz" "curl"))))

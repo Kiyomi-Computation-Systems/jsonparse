@@ -135,12 +135,16 @@ reset_profile() {
   rm -rf "$profile" "$store" "$enter_cwd"
   mkdir -p "$profile/bin" "$profile/lib" "$store" "$enter_cwd"
   : >"$store/scheme"
+  : >"$store/libcmark-gfm.so"
+  : >"$store/libcmark-gfm-extensions.so"
   ln -s "$store/scheme" "$profile/bin/scheme"
+  ln -s "$store/libcmark-gfm.so" "$profile/lib/libcmark-gfm.so"
+  ln -s "$store/libcmark-gfm-extensions.so" "$profile/lib/libcmark-gfm-extensions.so"
 }
 
 # run_enter: prints CHEZ, then CC, LD_LIBRARY_PATH (or "unset") and
-# CHEZ_CMARK_GFM_LIBS as the command sees them, separated by |. Only CHEZ
-# is exported; the other three must come out empty, empty, "unset".
+# CHEZ_CMARK_GFM_LIBS as the command sees them, separated by |. CC and
+# LD_LIBRARY_PATH are never exported, so they come out empty and "unset".
 run_enter() {
   status=999
   ( cd "$enter_cwd" && env -i PATH="$PATH" GUIX_ENVIRONMENT="$profile" \
@@ -159,10 +163,11 @@ check "T7a complete profile: exit 0" [ "$status" -eq 0 ]
 check "T7a CHEZ is the profile's scheme" [ "$(field 1)" = "$profile/bin/scheme" ]
 check "T7a no CC" [ -z "$(field 2)" ]
 check "T7a no LD_LIBRARY_PATH" [ "$(field 3)" = "unset" ]
-check "T7a no CHEZ_CMARK_GFM_LIBS" [ -z "$(field 4)" ]
+check "T7a CHEZ_CMARK_GFM_LIBS is the profile's two cmark-gfm libraries" \
+  [ "$(field 4)" = "$profile/lib/libcmark-gfm.so:$profile/lib/libcmark-gfm-extensions.so" ]
 check "T7a no state directory" [ ! -e "$enter_cwd/.guix-env" ]
 
-# T7b-c: a profile missing one entry is refused, naming the entry, and the
+# T7b-e: a profile missing one entry is refused, naming the entry, and the
 # command never runs.
 refused() {  # LABEL PATH
   check "$1: exit 2" [ "$status" -eq 2 ]
@@ -178,6 +183,16 @@ reset_profile
 rm "$profile/bin/scheme"
 run_enter
 refused "T7c no scheme" "$profile/bin/scheme"
+
+reset_profile
+rm "$profile/lib/libcmark-gfm.so"
+run_enter
+refused "T7d no cmark-gfm" "$profile/lib/libcmark-gfm.so"
+
+reset_profile
+rm "$profile/lib/libcmark-gfm-extensions.so"
+run_enter
+refused "T7e no cmark-gfm extensions" "$profile/lib/libcmark-gfm-extensions.so"
 
 # T8: the command's arguments pass through verbatim.
 reset_profile

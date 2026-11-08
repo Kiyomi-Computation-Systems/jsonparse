@@ -1,0 +1,92 @@
+name: Pages
+
+# Renders docs/ into build/site/ (`make site`, gated by `make check-site`)
+# and deploys it to GitHub Pages on a release tag, or by hand from main: the
+# github-pages environment refuses a deploy from any other ref. It commits
+# nothing: build/site/ is made fresh here and handed to actions/deploy-pages
+# as an artifact. ci.yml's site job runs the same build on every pull request.
+#
+# The site needs Chez, the system cmark-gfm library and, for the generator's
+# suites, SRFI-64, which `make deps` links from chez-srfi (ADR-0021). Ubuntu's
+# chezscheme is below jsonparse's floor, which is fine here: nothing the site
+# runs loads jsonparse or byte-machine. chez-cmark-gfm comes from the archive
+# Akku.lock pins (`make site-deps`), which xz-utils unpacks.
+#
+# Every action is pinned to a full commit SHA, with its tag in a comment, as in
+# ci.yml.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time. A second tag pushed while one runs queues
+# rather than tearing a deployment out from under a reader.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      # Each job checks its architecture twice (ADR-0009): here, and Chez's
+      # machine type below.
+      - name: Assert the machine is x86_64
+        run: |
+          got="$(uname -m)"
+          [ "$got" = x86_64 ] || { echo "::error::runner ubuntu-24.04 is $got, not x86_64"; exit 1; }
+          echo "machine $got"
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Chez and cmark-gfm
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends chezscheme cmark-gfm xz-utils
+
+      # ta6le is amd64 and threaded (a6le has no threads): the site's suites
+      # import (jsonparse-testing), which takes Chez's mutexes, a threaded
+      # build's alone.
+      - name: Assert Chez is a ta6le build
+        run: |
+          got="$(echo '(display (machine-type))' | chezscheme -q)"
+          [ "$got" = ta6le ] || { echo "::error::Chez's machine type is $got, not ta6le"; exit 1; }
+          echo "Chez machine type $got"
+
+      - name: Init submodules
+        run: make submodules
+
+      - name: Get chez-cmark-gfm as Akku.lock pins it
+        run: make site-deps
+
+      # SITE_REF is the pushed tag (or the ref picked for a manual run), so
+      # links out of the site to repository files pin to this release.
+      - name: Gate the site
+        run: make check-site CHEZ=chezscheme SITE_REF="${GITHUB_REF_NAME}"
+
+      - name: Build the site
+        run: make site CHEZ=chezscheme SITE_REF="${GITHUB_REF_NAME}"
+
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: build/site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
