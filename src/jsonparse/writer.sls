@@ -48,8 +48,19 @@
 ;;;
 ;;; The options' indent lays the value out (ADR-0018). The writer reads
 ;;; null, depth-limit and indent, and ignores the reader's options.
+;;;
+;;; put-json-record writes a value as one record of a stream, framed as
+;;; the options' stream says (ADR-0014, ADR-0020):
+;;;
+;;;   lines   the value, compact, then a newline. A newline inside would
+;;;           split the record, so indent must be 0
+;;;   seq     an RS byte (#x1E), the value, then a newline
+;;;   values  the value, then a newline
+;;;
+;;; It checks the value whole first, so a refusal writes nothing of its
+;;; record, and reads stream besides put-json's options.
 (library (jsonparse writer)
-  (export put-json check-json)
+  (export put-json check-json put-json-record)
   (import (rnrs)
           (jsonparse error)
           (jsonparse options)
@@ -317,6 +328,29 @@
          (assertion-violation 'put-json "not an options record" options))
        (walk 'put-json port #f v options)
        (walk 'put-json port #t v options))))
+
+  ;; put-json-record : Binary-Output-Port Any [json-options] -> Void
+  ;; Writes V to PORT as one record of the options' stream (default
+  ;; (make-json-options), so lines). Raises put-json's &json-error, with
+  ;; put-json-record as its who, before writing any byte of the record.
+  ;; Raises an assertion violation under stream lines unless indent is 0.
+  (define put-json-record
+    (case-lambda
+      ((port v) (put-json-record port v default-options))
+      ((port v options)
+       (unless (and (output-port? port) (binary-port? port))
+         (assertion-violation 'put-json-record "not a binary output port" port))
+       (unless (json-options? options)
+         (assertion-violation 'put-json-record "not an options record" options))
+       (let ((stream (json-options-stream options)))
+         (when (and (eq? stream 'lines) (not (eqv? (json-options-indent options) 0)))
+           (assertion-violation 'put-json-record
+                                "a lines record is written compact, so indent must be 0"
+                                (json-options-indent options)))
+         (walk 'put-json-record port #f v options)
+         (when (eq? stream 'seq) (put-u8 port #x1E))
+         (walk 'put-json-record port #t v options)
+         (put-u8 port 10)))))
 
   ;; check-json : Any [json-options] -> Void
   ;; Raises the &json-error put-json would raise for V under OPTIONS

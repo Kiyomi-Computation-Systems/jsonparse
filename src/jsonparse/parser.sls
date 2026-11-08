@@ -74,6 +74,19 @@
 ;;; status and code until the parser is reset. A reset parser is as good as
 ;;; new, with the same handler, context and options.
 ;;;
+;;; A parser reads one value, unless its options' stream is values
+;;; (ADR-0014, ADR-0020). Then it reads any number, none included, and
+;;; finishes at the end of the input:
+;;;
+;;;   - an object, an array or a string needs nothing after it, so `[]{}`
+;;;     is two values;
+;;;   - a top-level number or literal needs whitespace or the end of the
+;;;     input after it, so `1-2` and `truefalse` are unexpected-byte where
+;;;     the second value starts.
+;;;
+;;; make-json-result makes a result, for a library that frames a stream
+;;; around parsers, as (jsonparse sequence) does.
+;;;
 ;;; The machine asks which container a value is in, and this library answers
 ;;; from its own stack (ADR-0004): one byte per open container, in a
 ;;; bytevector sized from the depth limit when the parser is made
@@ -86,6 +99,7 @@
           make-json-parser json-parser?
           json-parser-feed! json-parser-finish! json-parser-reset!
           json-parser-offset
+          make-json-result
           json-result? json-result-status json-result-code json-result-offset)
   (import (rnrs)
           (byte-machine runtime)
@@ -285,6 +299,9 @@
 
   (define default-options (make-json-options))
 
+  ;; The machine's mode bit 0, which lets values follow the first.
+  (define mode-allow-multiple 1)
+
   ;; make-json-parser : json-handler [Any [json-options]] -> json-parser
   ;; A parser that calls HANDLER's procedures with CONTEXT (default #f),
   ;; under OPTIONS (default (make-json-options)).
@@ -301,25 +318,44 @@
               (s (make-state (make-bytevector limit 0) 0 0 context)))
          (new-json-parser
           (make-parser jsonparse-machine (bindings handler) s
-                       (list (cons 'depth-left limit)))
+                       (list (cons 'depth-left limit)
+                             (cons 'mode (if (eq? (json-options-stream options) 'values)
+                                             mode-allow-multiple
+                                             0))))
           s)))))
 
   ;; json-result? : Any -> Boolean
   ;; json-result-status : json-result -> (U 'need-input 'finished 'error)
   ;; json-result-code : json-result -> (Option Symbol)
   ;; json-result-offset : json-result -> Nonnegative-Integer
-  (define-record-type (json-result make-json-result json-result?)
+  (define-record-type (json-result new-json-result json-result?)
     (fields (immutable status json-result-status)
             (immutable code json-result-code)
             (immutable offset json-result-offset))
     (sealed #t)
     (opaque #t))
 
+  ;; make-json-result : (U 'need-input 'finished 'error) (Option Symbol) Nonnegative-Integer -> json-result
+  ;; A result. CODE is a symbol spelt [a-z][a-z0-9-]* for an error, and #f
+  ;; otherwise, or it raises.
+  (define (make-json-result status code offset)
+    (unless (memq status '(need-input finished error))
+      (assertion-violation 'make-json-result "the status is not need-input, finished or error" status))
+    (unless (if (eq? status 'error)
+                (and (symbol? code) (code-name? code))
+                (not code))
+      (assertion-violation 'make-json-result
+                           "the code is not a symbol spelt [a-z][a-z0-9-]* for an error, or #f otherwise"
+                           status code))
+    (unless (and (integer? offset) (exact? offset) (>= offset 0))
+      (assertion-violation 'make-json-result "the offset is not an exact nonnegative integer" offset))
+    (new-json-result status code offset))
+
   (define (result r)
     (let ((e (parser-result-error r)))
       (if e
-          (make-json-result 'error (parser-error-code e) (parser-error-offset e))
-          (make-json-result (parser-result-status r) #f (parser-result-stream-offset r)))))
+          (new-json-result 'error (parser-error-code e) (parser-error-offset e))
+          (new-json-result (parser-result-status r) #f (parser-result-stream-offset r)))))
 
   ;; Refusals of the calling code's mistakes. byte-machine refuses a parser
   ;; fed from inside its own procedures, or after one raised, with its own

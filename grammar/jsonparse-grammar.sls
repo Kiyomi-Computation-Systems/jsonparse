@@ -36,7 +36,9 @@
 ;;;               decrement that would go below zero is `nesting-too-deep`
 ;;;               (ADR-0005). Its width bounds the depth limit at 65535.
 ;;;   cp          uint16  the escape's code unit
-;;;   mode        uint8, settable; bit 0 allows several top-level values
+;;;   mode        uint8, settable; bit 0 allows several top-level values,
+;;;               none included. Under it a top-level number or literal
+;;;               needs whitespace or the end of the input after it
 (library (jsonparse-grammar)
   (export jsonparse-graph render-generated
           generated-binding default-depth-limit mode-allow-multiple)
@@ -137,9 +139,9 @@
              (make-sequence-case (ascii-bytes "false") 'lit-false #f)
              (make-sequence-case (ascii-bytes "null") 'lit-null #f))
        (re 'e-unexpected) #f #f)
-     (cb 'lit-true 'true 'after-value)
-     (cb 'lit-false 'false 'after-value)
-     (cb 'lit-null 'null 'after-value)))
+     (cb 'lit-true 'true 'after-scalar)
+     (cb 'lit-false 'false 'after-scalar)
+     (cb 'lit-null 'null 'after-scalar)))
 
   ;; --- containers -----------------------------------------------------------------
   ;; Open: spend one of depth-left, which fails past the limit; count the
@@ -195,9 +197,25 @@
         (re 'e-unexpected)))))
 
   ;; After any value: at depth 0 we are done; otherwise ask the consumer.
+  ;; Under mode bit 0 a value may follow, and a stream may hold none
+  ;; (ADR-0014).
   (define after-value-nodes
     (list
+     (make-field-branch-node 'start 'mask-any (list 'mode mode-allow-multiple)
+                             'stream-start 'value #f)
+     (dispatch 'stream-start
+       (list (case* ws (adv 'stream-start)))
+       (re 'value) 'done)
      (make-field-branch-node 'after-value 'zero '(depth) 'top-done 'ask-context #f)
+     ;; Only whitespace can end a number or a literal. Under the bit, one at
+     ;; the top needs whitespace or the end of the input after it, so `1-2`
+     ;; and `truefalse` are errors where the next byte starts.
+     (make-field-branch-node 'after-scalar 'zero '(depth) 'top-scalar-done 'ask-context #f)
+     (dispatch 'top-scalar-done
+       (list (case* ws (adv 'top-done)))
+       (re 'top-scalar-more) 'done)
+     (make-field-branch-node 'top-scalar-more 'mask-any (list 'mode mode-allow-multiple)
+                             'e-unexpected 'e-trailing #f)
      (make-callback-node 'ask-context 'context 'e-context
                          '((object obj-next) (array arr-next)) 'e-context #f)
      (dispatch 'top-done
@@ -334,7 +352,7 @@
          bad)
        (dispatch 'num-exp1 (list (case* digit (adv 'num-exp))) bad)
        (dispatch 'num-exp (list (case* digit (adv 'num-exp))) end 'num-eof)
-       (make-span-end-node 'num-end 'number 'after-value #f)
+       (make-span-end-node 'num-end 'number 'after-scalar #f)
        (make-span-end-node 'num-eof 'number 'num-eof-depth #f)
        (make-field-branch-node 'num-eof-depth 'zero '(depth) 'done 'e-eof #f))))
 
@@ -342,7 +360,7 @@
   ;; The machine. Its name, jsonparse, names the generated library
   ;; (generated jsonparse) (ADR-0001).
   (define jsonparse-graph
-    (make-machine 'jsonparse 'value field-decls callbacks spans errors
+    (make-machine 'jsonparse 'start field-decls callbacks spans errors
       (append value-nodes object-nodes array-nodes after-value-nodes
               (string-nodes 'key 'key-start 'key-end 'colon)
               (string-nodes 'str 'string-start 'string-end 'after-value)

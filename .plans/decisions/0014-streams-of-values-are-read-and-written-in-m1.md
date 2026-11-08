@@ -1,9 +1,15 @@
 # ADR-0014: Streams of values are read and written in M1
 
-- **Status:** Accepted, revised the same day
+- **Status:** Accepted, revised the same day and on 2026-11-07
 - **Date:** 2026-10-30
 - **Scope:** reading and writing many JSON values from one stream
 - **Related:** ADR-0005, ADR-0010, ADR-0011, ADR-0012; plan M1 and M4
+
+> **Revision (2026-11-07, slice 7).** Giving the procedure that hears of
+> skipped records is what turns skipping on, so Decision 3's option is
+> gone. The owner chose this form. ADR-0020 records it, with the reader,
+> the options and the easy layer's procedures. A blank line under
+> `'blank-lines 'skip` isn't a bad record, so it goes to no procedure.
 
 > **Revision (2026-10-30, after slice 1).** Slice 1 found that the
 > multiple-values bit needs no separator at all: it accepts `[]{}` and

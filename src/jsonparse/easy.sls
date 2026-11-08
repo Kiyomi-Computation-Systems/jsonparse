@@ -1,14 +1,15 @@
 #!r6rs
-;;; (jsonparse easy): whole documents in, values out, and back again
-;;; (ADR-0010, ADR-0019).
+;;; (jsonparse easy): whole documents and streams of them in, values out,
+;;; and back again (ADR-0010, ADR-0019, ADR-0020).
 ;;;
 ;;;   (string->json "{\"a\": [1, null]}")     ; => (("a" . #(1 null)))
 ;;;   (json->string '(("a" . #(1 null))))     ; => "{\"a\":[1,null]}"
 ;;;   (json-ref v "users" 0 "name")
 ;;;
-;;; Reading takes one whole document, from a string, a bytevector, or a
-;;; binary input port read to its end. It returns what (jsonparse tree)
-;;; builds, under the options given last, (make-json-options) by default.
+;;; string->json, bytevector->json and read-json take one whole document,
+;;; from a string, a bytevector, or a binary input port read to its end.
+;;; Each returns what (jsonparse tree) builds, under the options given
+;;; last, (make-json-options) by default.
 ;;; Bad input raises a &json-error:
 ;;;
 ;;;   reason   the parser's code, such as unexpected-byte or number-too-long
@@ -24,6 +25,20 @@
 ;;; a binary output port. A value JSON can't express raises put-json's
 ;;; &json-error, its offset #f, again with the easy procedure as its who.
 ;;; What a caller's port raises passes through as it was raised.
+;;;
+;;; Streams of many values, framed as the options' stream says: lines, the
+;;; default, seq or values (ADR-0014, ADR-0020):
+;;;
+;;;   (bytevector->json-sequence (string->utf8 "1\n[2]\n"))   ; => (1 #(2))
+;;;   (fold-json-sequence cons '() port)                       ; the values, last first
+;;;   (write-json-sequence port '(1 #(2)))                      ; 1, newline, [2], newline
+;;;
+;;; A bad record raises a &json-record-error: a &json-error whose offset
+;;; counts bytes from the start of the stream, and whose record is the bad
+;;; record's number, from 1. Given REPORT, a reader skips bad records
+;;; instead, and calls REPORT with the &json-record-error for each, which
+;;; REPORT may raise to stop. Stream seq needs REPORT, and stream values
+;;; refuses it.
 ;;;
 ;;; json-ref follows a path of keys and indices:
 ;;;
@@ -42,14 +57,18 @@
 (library (jsonparse easy)
   (export string->json bytevector->json read-json
           json->string json->bytevector write-json
+          read-json-sequence bytevector->json-sequence fold-json-sequence
+          write-json-sequence json-sequence->bytevector
           json-ref json=? json-null?
           &json-error json-error? json-error-reason json-error-offset
+          &json-record-error json-record-error? json-error-record
           make-json-options json-options?
           make-json-number json-number? json-number-text)
   (import (rnrs)
           (jsonparse error)
           (jsonparse options)
           (jsonparse parser)
+          (jsonparse sequence)
           (jsonparse string)
           (jsonparse tree)
           (jsonparse writer))
@@ -59,6 +78,12 @@
   (define (check-options who options)
     (unless (json-options? options)
       (assertion-violation who "not an options record" options)))
+
+  ;; A reader of one document refuses stream values, which holds many.
+  (define (check-one-document who options)
+    (check-options who options)
+    (when (eq? (json-options-stream options) 'values)
+      (assertion-violation who "stream values holds many values: read it with read-json-sequence")))
 
   ;; --- reading ----------------------------------------------------------------
 
@@ -103,7 +128,7 @@
       ((s options)
        (unless (string? s)
          (assertion-violation 'string->json "not a string" s))
-       (check-options 'string->json options)
+       (check-one-document 'string->json options)
        (let ((bv (string->utf8 s)))
          (let-values (((v r) (build bv options)))
            (if r
@@ -119,7 +144,7 @@
       ((bv options)
        (unless (bytevector? bv)
          (assertion-violation 'bytevector->json "not a bytevector" bv))
-       (check-options 'bytevector->json options)
+       (check-one-document 'bytevector->json options)
        (let-values (((v r) (build bv options)))
          (if r
              (refuse-input 'bytevector->json r (json-result-offset r) "byte")
@@ -138,7 +163,7 @@
       ((port options)
        (unless (and (input-port? port) (binary-port? port))
          (assertion-violation 'read-json "not a binary input port" port))
-       (check-options 'read-json options)
+       (check-one-document 'read-json options)
        (let ((b (make-json-builder options))
              (buf (make-bytevector chunk-size)))
          (let loop ()
@@ -204,6 +229,153 @@
        ;; The check alone is relabelled: PORT's write! runs caller code.
        (as 'write-json (lambda () (check-json v options)))
        (put-json port v options))))
+
+;; --- streams of values -------------------------------------------------------
+
+  ;; The &json-record-error for record RECORD, bad for CODE at OFFSET.
+  (define (record-error who code record offset)
+    (condition (make-json-record-error code offset record)
+               (make-who-condition who)
+               (make-message-condition
+                (string-append (symbol->string code) " at byte " (number->string offset)
+                               " in record " (number->string record)))
+               (make-irritants-condition '())))
+
+  (define (check-report who report options)
+    (unless (or (not report) (procedure? report))
+      (assertion-violation who "not a procedure or #f" report))
+    (check-options who options)
+    (case (json-options-stream options)
+      ((seq)
+       (unless report
+         (assertion-violation who "stream seq skips bad records, so it needs a procedure to report them to")))
+      ((values)
+       (when report
+         (assertion-violation who "stream values can't skip a bad value: nothing marks where the next begins"
+                              report)))
+      (else #f)))
+
+  ;; Folds KONS over the values of a stream with a new reader. FEED is
+  ;; called with a procedure that feeds the reader the bytes of a
+  ;; bytevector from START below END, and feeds it the whole stream.
+  (define (fold-stream who kons knil report options feed)
+    (let* ((acc knil)
+           (r (make-json-reader
+               (lambda (v) (set! acc (kons v acc)))
+               (and report
+                    (lambda (code record offset)
+                      (report (record-error who code record offset))))
+               options)))
+      (define (refuse-if-error res)
+        (when (eq? (json-result-status res) 'error)
+          (raise (record-error who (json-result-code res) (json-reader-record r)
+                               (json-result-offset res)))))
+      (feed (lambda (bv start end) (refuse-if-error (json-reader-feed! r bv start end))))
+      (refuse-if-error (json-reader-finish! r))
+      acc))
+
+  ;; Feeds a reader PORT's bytes as they come: get-bytevector-some answers
+  ;; as soon as any are ready, so a value goes on once its record has come.
+  (define (port-feed port)
+    (lambda (feed!)
+      (let loop ()
+        (let ((bv (get-bytevector-some port)))
+          (unless (eof-object? bv)
+            (feed! bv 0 (bytevector-length bv))
+            (loop))))))
+
+  (define (check-input-port who port)
+    (unless (and (input-port? port) (binary-port? port))
+      (assertion-violation who "not a binary input port" port)))
+
+  ;; fold-json-sequence : (Any a -> a) a Binary-Input-Port [(U #f (&json-record-error -> Any))] [json-options] -> a
+  ;; Folds KONS over the values of the stream PORT holds, read to its end:
+  ;; (KONS value acc), from KNIL, in stream order. Each value is folded in
+  ;; as soon as its record has been read.
+  (define fold-json-sequence
+    (case-lambda
+      ((kons knil port) (fold-json-sequence kons knil port #f default-options))
+      ((kons knil port x)
+       (if (json-options? x)
+           (fold-json-sequence kons knil port #f x)
+           (fold-json-sequence kons knil port x default-options)))
+      ((kons knil port report options)
+       (unless (procedure? kons)
+         (assertion-violation 'fold-json-sequence "not a procedure" kons))
+       (check-input-port 'fold-json-sequence port)
+       (check-report 'fold-json-sequence report options)
+       (fold-stream 'fold-json-sequence kons knil report options (port-feed port)))))
+
+  ;; read-json-sequence : Binary-Input-Port [(U #f (&json-record-error -> Any))] [json-options] -> (Listof Any)
+  ;; The values of the stream PORT holds, read to its end.
+  (define read-json-sequence
+    (case-lambda
+      ((port) (read-json-sequence port #f default-options))
+      ((port x)
+       (if (json-options? x)
+           (read-json-sequence port #f x)
+           (read-json-sequence port x default-options)))
+      ((port report options)
+       (check-input-port 'read-json-sequence port)
+       (check-report 'read-json-sequence report options)
+       (reverse (fold-stream 'read-json-sequence cons '() report options (port-feed port))))))
+
+  ;; bytevector->json-sequence : Bytevector [(U #f (&json-record-error -> Any))] [json-options] -> (Listof Any)
+  ;; The values of the stream in BV.
+  (define bytevector->json-sequence
+    (case-lambda
+      ((bv) (bytevector->json-sequence bv #f default-options))
+      ((bv x)
+       (if (json-options? x)
+           (bytevector->json-sequence bv #f x)
+           (bytevector->json-sequence bv x default-options)))
+      ((bv report options)
+       (unless (bytevector? bv)
+         (assertion-violation 'bytevector->json-sequence "not a bytevector" bv))
+       (check-report 'bytevector->json-sequence report options)
+       (reverse (fold-stream 'bytevector->json-sequence cons '() report options
+                             (lambda (feed!) (feed! bv 0 (bytevector-length bv))))))))
+
+  (define (check-records who vs options)
+    (unless (list? vs)
+      (assertion-violation who "not a list" vs))
+    (check-options who options)
+    (when (and (eq? (json-options-stream options) 'lines)
+               (not (eqv? (json-options-indent options) 0)))
+      (assertion-violation who "a lines record is written compact, so indent must be 0"
+                           (json-options-indent options))))
+
+  ;; write-json-sequence : Binary-Output-Port (Listof Any) [json-options] -> Void
+  ;; Writes each of VS to PORT as one record of the options' stream, as
+  ;; put-json-record does. Raises a &json-error, before writing any byte of
+  ;; its record, at the first value JSON can't express: the records before
+  ;; it stay written. What PORT itself raises passes through as it was
+  ;; raised.
+  (define write-json-sequence
+    (case-lambda
+      ((port vs) (write-json-sequence port vs default-options))
+      ((port vs options)
+       (unless (and (output-port? port) (binary-port? port))
+         (assertion-violation 'write-json-sequence "not a binary output port" port))
+       (check-records 'write-json-sequence vs options)
+       (for-each (lambda (v)
+                   ;; The check alone is relabelled: PORT's write! runs caller code.
+                   (as 'write-json-sequence (lambda () (check-json v options)))
+                   (put-json-record port v options))
+                 vs))))
+
+  ;; json-sequence->bytevector : (Listof Any) [json-options] -> Bytevector
+  ;; VS as a stream of the options' format, in UTF-8. Raises a &json-error
+  ;; if JSON can't express one of them.
+  (define json-sequence->bytevector
+    (case-lambda
+      ((vs) (json-sequence->bytevector vs default-options))
+      ((vs options)
+       (check-records 'json-sequence->bytevector vs options)
+       (let-values (((port get) (open-bytevector-output-port)))
+         (as 'json-sequence->bytevector
+             (lambda () (for-each (lambda (v) (put-json-record port v options)) vs)))
+         (get)))))
 
   ;; --- json-ref ---------------------------------------------------------------
 

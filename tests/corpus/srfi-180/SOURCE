@@ -1,0 +1,6 @@
+name: SRFI 180
+url: https://github.com/scheme-requests-for-implementation/srfi-180
+commit: e45cb7da41dee16c13a6309655fc70a137311726
+fetched: 2026-11-07
+taken: srfi/files/, the 5 stream files (sample.jsonl, sample-crlf-line-separators.jsonl, sample-no-eol-at-eof.jsonl, json-sequence.log, json-sequence-with-one-broken-json.log), unchanged, into files/
+license: MIT for SRFI 180; the .jsonl files BSD-3-Clause from python-jsonlines at 43d1a30b9634f8b715b6af3f2473927caa1e704d, the .log files MIT from json-text-sequence at 567ca3075d0391836f1b137bd3201e003b1caaa6; LICENSE holds all three notices, unchanged

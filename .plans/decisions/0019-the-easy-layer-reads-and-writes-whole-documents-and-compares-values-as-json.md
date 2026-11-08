@@ -1,11 +1,18 @@
 # ADR-0019: The easy layer reads and writes whole documents, and compares values as JSON
 
-- **Status:** Accepted
+- **Status:** Accepted, revised on 2026-11-08
 - **Date:** 2026-11-07
 - **Scope:** `(jsonparse easy)`: its procedures, errors and offsets;
   `check-json` in `(jsonparse writer)`
 - **Related:** ADR-0006, ADR-0010, ADR-0016, ADR-0017, ADR-0018; uriparse's
   `(uri easy)`
+
+> **Revision (2026-11-08, slice 7).** ADR-0020 adds streams to this layer:
+> `read-json-sequence`, `bytevector->json-sequence` and
+> `fold-json-sequence` read many documents with one reader, and
+> `write-json-sequence` and `json-sequence->bytevector` write them. What
+> this record says of reading one whole document holds for `string->json`,
+> `bytevector->json` and `read-json`, which now refuse `stream values`.
 
 ## Context
 

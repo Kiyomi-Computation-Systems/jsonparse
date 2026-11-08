@@ -36,6 +36,18 @@
 ;;; json-builder-reset! makes a builder as good as new, for the next
 ;;; document: it resets the parser and the assembler too.
 ;;;
+;;; A builder given a procedure, EACH, hands it every top-level value as
+;;; soon as the value is complete, and keeps none of them (ADR-0020):
+;;;
+;;;   (define b (make-json-builder (make-json-options 'stream 'values)
+;;;                                (lambda (v) (display v))))
+;;;   (json-builder-feed! b (string->utf8 "1 [2] {}"))   ; shows 1, #(2) and ()
+;;;
+;;; That is how a stream of values is read: the options' stream values
+;;; needs EACH. EACH's return value is ignored, unless it is a stop
+;;; (make-json-stop), which ends the parse with its code, as a handler
+;;; procedure's does. json-builder-value raises for such a builder.
+;;;
 ;;; The stack holds each value until its container ends, plus a slot for
 ;;; each open container. A container is built once, at its end, from the
 ;;; slots it fills: an array is one vector, an alist one pair per member
@@ -57,16 +69,18 @@
   ;; The handler's context. The stack's slots from 0 below top hold values
   ;; and marks; every slot from top up is #f. A mark is the mark before it:
   ;; an open container's slot holds its parent's mark, and mark is the slot
-  ;; after the innermost one's, where its members begin. With no container
-  ;; open, mark is never read: the next container to open saves it, and
-  ;; puts it back when it closes.
+  ;; after the innermost one's, where its members begin. So mark is at
+  ;; least 1 while a container is open, and 0 when none is: the outermost
+  ;; container saves 0 and puts it back when it closes. EACH is #f, or the
+  ;; procedure every top-level value goes to.
   (define-record-type state
     (fields (mutable stack state-stack state-stack-set!)
             (mutable top state-top state-top-set!)
             (mutable mark state-mark state-mark-set!)
             (immutable assembler state-assembler)
             (immutable hashtables? state-hashtables?)
-            (immutable null state-null))
+            (immutable null state-null)
+            (immutable each state-each))
     (sealed #t))
 
   (define initial-size 64)
@@ -133,6 +147,7 @@
 
   (define (empty! s)
     (drop! s 0)
+    (state-mark-set! s 0)
     (json-assembler-reset! (state-assembler s)))
 
   ;; --- the handler ------------------------------------------------------------
@@ -158,6 +173,35 @@
      'array-start open!
      'array-end array-end!))
 
+  ;; With no container open, the value just pushed is a whole top-level
+  ;; value: it leaves the stack for EACH, whose answer goes to the parser.
+  (define (top-level! s)
+    (when (fx=? (state-mark s) 0)
+      (let ((v (vector-ref (state-stack s) 0)))
+        (drop! s 0)
+        ((state-each s) v))))
+
+  (define each-handler
+    (make-json-handler
+     'null (lambda (s) (push! s (state-null s)) (top-level! s))
+     'boolean (lambda (s b) (push! s b) (top-level! s))
+     'number-chars (lambda (s bv start end)
+                     (json-assembler-number-chars! (state-assembler s) bv start end))
+     'number-end (lambda (s)
+                   (let ((n (json-assembler-number! (state-assembler s))))
+                     (if (json-stop? n)
+                         n
+                         (begin (push! s n) (top-level! s)))))
+     'chars (lambda (s bv start end)
+              (json-assembler-chars! (state-assembler s) bv start end))
+     'escape (lambda (s scalar) (json-assembler-escape! (state-assembler s) scalar))
+     'string-end (lambda (s) (text! s) (top-level! s))
+     'object-start open!
+     'key-end text!
+     'object-end (lambda (s) (object-end! s) (top-level! s))
+     'array-start open!
+     'array-end (lambda (s) (array-end! s) (top-level! s))))
+
   ;; --- the builder ------------------------------------------------------------
 
   ;; json-builder? : Any -> Boolean
@@ -171,21 +215,36 @@
 
   (define default-options (make-json-options))
 
-  ;; make-json-builder : [json-options] -> json-builder
+  ;; make-json-builder : [json-options [(Any -> Any)]] -> json-builder
   ;; A builder under OPTIONS (default (make-json-options)): its parser's
-  ;; depth limit, its assembler's number mode and digit limit, and its
-  ;; object mode and null.
+  ;; depth limit and stream, its assembler's number mode and digit limit,
+  ;; and its object mode and null. Given EACH, it hands EACH every
+  ;; top-level value and keeps none. Stream values needs EACH.
   (define make-json-builder
     (case-lambda
       (() (make-json-builder default-options))
       ((options)
        (unless (json-options? options)
          (assertion-violation 'make-json-builder "not an options record" options))
-       (let ((s (make-state (make-vector initial-size #f) 0 0
-                            (make-json-assembler options)
-                            (eq? (json-options-object-mode options) 'hashtable)
-                            (json-options-null options))))
-         (new-json-builder (make-json-parser handler s options) s 'need-input)))))
+       (when (eq? (json-options-stream options) 'values)
+         (assertion-violation 'make-json-builder
+                              "stream values needs a procedure for each value"))
+       (build options #f))
+      ((options each)
+       (unless (json-options? options)
+         (assertion-violation 'make-json-builder "not an options record" options))
+       (unless (procedure? each)
+         (assertion-violation 'make-json-builder "not a procedure" each))
+       (build options each))))
+
+  (define (build options each)
+    (let ((s (make-state (make-vector initial-size #f) 0 0
+                         (make-json-assembler options)
+                         (eq? (json-options-object-mode options) 'hashtable)
+                         (json-options-null options)
+                         each)))
+      (new-json-builder (make-json-parser (if each each-handler handler) s options)
+                        s 'need-input)))
 
   (define (check-builder who b)
     (unless (json-builder? b)
@@ -226,9 +285,13 @@
     (noted b (json-parser-finish! (builder-parser b))))
 
   ;; json-builder-value : json-builder -> Any
-  ;; The value B built. Raises unless B's last result was finished.
+  ;; The value B built. Raises unless B's last result was finished, and
+  ;; for a builder that hands its values to a procedure.
   (define (json-builder-value b)
     (check-builder 'json-builder-value b)
+    (when (state-each (builder-state b))
+      (assertion-violation 'json-builder-value
+                           "this builder hands each value to its procedure and keeps none"))
     (unless (eq? (builder-status b) 'finished)
       (assertion-violation 'json-builder-value
                            "there is no value until finish answers finished"
