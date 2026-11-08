@@ -1,0 +1,6 @@
+name: parse-number-fxx-test-data
+url: https://github.com/nigeltao/parse-number-fxx-test-data
+commit: 55d79b184b7d8fac2e143e89dc19b766ec4e54b8
+fetched: 2026-11-08
+taken: data/more-test-cases.txt and data/lemire-fast-float.txt, unchanged, into files/
+license: Apache-2.0; the repository has no NOTICE file; LICENSE holds its LICENSE and AUTHORS, unchanged

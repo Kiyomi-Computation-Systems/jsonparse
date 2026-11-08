@@ -1,10 +1,59 @@
 # ADR-0012: Tests use licensed, vendored corpora and generated cases
 
-- **Status:** Accepted, revised the same day
+- **Status:** Accepted, revised the same day and on 2026-11-08
 - **Date:** 2026-10-30
 - **Scope:** the test corpora and the test methods
 - **Related:** plan M1 test lanes; ADR-0002, ADR-0004, ADR-0005, ADR-0008,
   ADR-0011
+
+> **Revision (2026-11-08, slice 8).** The last two corpora arrived.
+> Measuring them, and the slice's review, changed these:
+> - **parse-number-fxx-test-data has no `NOTICE` file,** so Apache-2.0
+>   asks for none (§4(d)). Its `LICENSE` and `AUTHORS` go into the corpus's
+>   `LICENSE`. Its README says `lemire-fast-float.txt` was extracted from
+>   lemire/fast_float, which is licensed under Apache-2.0, MIT or BSL-1.0.
+> - **The filter is `tests/test-float64.sps`'s own,** in Scheme, and the
+>   two files are vendored unchanged. It drops 6 of `lemire-fast-float.txt`'s
+>   3,299 texts, such as `.5` and `1.e2`.
+> - **The two files can't catch every wrong conversion.** A reader that kept
+>   20 significant digits, or rounded twice below the least normal, passed
+>   them. Our own `tests/fixtures/float64/hard-cases.txt` adds 24 texts
+>   that catch both: digits that decide the rounding, out to the 800th, and
+>   ties at the subnormal and overflow edges. Their bits come from Python's
+>   `float()` on the host, each checked by rounding the text's exact value.
+> - **The float64 lane also reads every text other ways:**
+>   - flonum mode reads an integer text as an exact integer (ADR-0011), so
+>     2,693 texts would skip the check. Each is also read with `e0` after
+>     it, the same number, which must give its bits;
+>   - every text is also read with `-` before it, which must give the same
+>     bits with the sign set, and inside an array, ended by `]`;
+>   - the lane raises the digit limit past the longest text, 1,023 digits.
+>     At the default limit, the two texts over 1,000 digits must be
+>     `number-too-long`.
+> - **Every round-trip file comes back in `flonum` mode,** so the list of
+>   exceptions is empty.
+> - **A suite whose flonum expectations come from Chez says so in its
+>   header,** since they share the converter the library uses.
+> - **The plan's exit criterion of a documented API is checked:**
+>   `tests/test-docs.sps` fails unless every name a `(jsonparse ...)`
+>   library exports is named in `docs/`.
+>
+> Decision 5's methods reach the new files:
+> - nativejson-benchmark's files join the parser, number, tree and easy
+>   suites' corpus, so they are cut at every split and pair of splits, and
+>   the round-trip suite reads them in chunks of 1 to 31 bytes;
+> - SRFI 180's files are read in chunks of 1 to 31 bytes, and the three of
+>   40 bytes or less at every split and pair, by the sequence suite;
+> - fuzzing seeds from every corpus's files of JSON text of at most 4 KB:
+>   JSONTestSuite's `i_` files, yajl's, SRFI 180's and
+>   nativejson-benchmark's, beside the `y_` and `n_` files.
+>
+> parse-number-fxx's files are tables of numbers, not JSON text: each number
+> is fed whole and a byte at a time. The interpreter is compared with the
+> generated parser on JSONTestSuite's files directly, and on the others
+> only through fuzzing's mutants. Fuzzing drives the parser, not the reader:
+> SRFI 180's RS-framed files mostly fail at their first byte, and the
+> reader's own mutation lane is `tests/test-sequence-property.sps`.
 
 > **Revision (2026-10-30, slice 1).** The yajl row named `fg_` as an option
 > prefix. yajl's runner turns options on for `ac_`, `ag_`, `am_` and `ap_`
@@ -99,10 +148,11 @@ only licensed ones found.
        reason.
    - **SRFI 180's five files,** with all three upstream notices.
    - **Two files of parse-number-fxx-test-data,** `more-test-cases.txt` and
-     `lemire-fast-float.txt`. A committed script filters them to JSON numbers.
-     In `flonum` mode, each must read as exactly its float64 bits. This is the
-     check of ADR-0011's "nearest flonum" that doesn't trust the Scheme reader.
-     Apache-2.0 requires its license and a `NOTICE`.
+     `lemire-fast-float.txt`. `tests/test-float64.sps` filters them to JSON
+     numbers. In `flonum` mode, each must read as exactly its float64 bits.
+     This is the check of ADR-0011's "nearest flonum" that doesn't trust the
+     Scheme reader. Apache-2.0 requires its license; the repository has no
+     `NOTICE` to carry. Our own hard cases join them (revision above).
 3. **Not vendored:**
    - the JSON_checker files, in any copy, because of the JSON license.
      JSONTestSuite covers the same ground.
@@ -117,10 +167,12 @@ only licensed ones found.
 5. **Methods:**
    - **Chunking.**
      - Inputs of at most 64 bytes are cut at every split and every pair of
-       splits, using byte-machine's schedules (`schedules-for`). That covers
-       the in-house cases and 311 of JSONTestSuite's 318 files.
-     - Every corpus file of at most 4 KB is read with chunks of 1 to 31
-       bytes, as yajl's runner does.
+       splits, using byte-machine's schedules (`schedules-for`), or the
+       sequence suite's own for streams. That covers the in-house cases, 311
+       of JSONTestSuite's 318 files, nativejson-benchmark's 27, and SRFI
+       180's three `.jsonl` files.
+     - Every corpus file of JSON text of at most 4 KB is read with chunks of
+       1 to 31 bytes, as yajl's runner does.
      - Larger files are read with chunks of 1, 7 and 31 bytes and with
        random schedules.
    - **Differentials:**
@@ -168,4 +220,6 @@ only licensed ones found.
 - **The JSON Lines and RFC 7464 cases are mostly ours,** so each one cites its
   spec clause.
 - **Adding a corpus without its license or `SOURCE` file fails the check.**
-- **The vendored data is small:** the largest file is about 127 KB.
+- **The vendored data is small:** the largest file is a JSONTestSuite nest
+  of 250,001 bytes. The next are `lemire-fast-float.txt`, 127,450 bytes, and
+  a nest of 100,000.

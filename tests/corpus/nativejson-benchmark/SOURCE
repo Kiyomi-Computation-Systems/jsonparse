@@ -1,0 +1,6 @@
+name: nativejson-benchmark
+url: https://github.com/miloyip/nativejson-benchmark
+commit: 478d5727c2a4048e835a29c65adecc7d795360d5
+fetched: 2026-11-08
+taken: data/roundtrip/, the 27 round-trip files (roundtrip01.json to roundtrip27.json), unchanged, into files/
+license: MIT; LICENSE holds the upstream notice, unchanged

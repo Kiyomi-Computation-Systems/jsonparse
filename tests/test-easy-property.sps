@@ -4,8 +4,9 @@
 ;;;
 ;;; Usage: test-easy-property.sps [SEED [MULTIPLIER]]
 ;;;
-;;; 1. Conformance through both layers. Every file of the JSONTestSuite and
-;;;    of yajl's cases, under six option sets (the defaults among them),
+;;; 1. Conformance through both layers. Every file of the JSONTestSuite, of
+;;;    yajl's cases and of nativejson-benchmark's round-trip files, under six
+;;;    option sets (the defaults among them),
 ;;;    read by bytevector->json, by read-json on a port (from its start,
 ;;;    and after a 3-byte prefix was taken), and by string->json when the
 ;;;    bytes are valid UTF-8. The answer to match is a builder's from
@@ -194,12 +195,15 @@
 
 (define suite-dir "tests/corpus/jsontestsuite/test_parsing")
 (define yajl-dir "tests/corpus/yajl/cases")
+(define nj-dir "tests/corpus/nativejson-benchmark/files")
 
 (define corpus
   (append (map (lambda (n) (cons (string-append "j:" n) (file-bytes (string-append suite-dir "/" n))))
                (corpus-files suite-dir ".json"))
           (map (lambda (n) (cons (string-append "y:" n) (file-bytes (string-append yajl-dir "/" n))))
-               (corpus-files yajl-dir ".json"))))
+               (corpus-files yajl-dir ".json"))
+          (map (lambda (n) (cons (string-append "n:" n) (file-bytes (string-append nj-dir "/" n))))
+               (corpus-files nj-dir ".json"))))
 
 (define option-sets
   (list (cons 'defaults (opts))
@@ -257,19 +261,20 @@
 (define section-1-totals
   (map (lambda (p) (cons (car p) (section-1 (car p) (cdr p)))) option-sets))
 
-(test-equal "conformance: the corpus has 318 JSONTestSuite files and 58 yajl cases"
-  '(376 318 58)
+(test-equal "conformance: the corpus has 318 JSONTestSuite files, 58 yajl cases and 27 round-trip files"
+  '(403 318 58 27)
   (list (length corpus)
         (length (filter (lambda (f) (char=? (string-ref (car f) 0) #\j)) corpus))
-        (length (filter (lambda (f) (char=? (string-ref (car f) 0) #\y)) corpus))))
+        (length (filter (lambda (f) (char=? (string-ref (car f) 0) #\y)) corpus))
+        (length (filter (lambda (f) (char=? (string-ref (car f) 0) #\n)) corpus))))
 
 (test-equal "conformance: files accepted and rejected, strings read, and reads made, per option set"
-  '((defaults 125 251 349 1477)
-    (hashtable-text 130 246 349 1477)
-    (exact-digits-30 118 258 349 1477)
-    (depth-3-nil 123 253 349 1477)
-    (hashtable-record-digits-5 110 266 349 1477)
-    (text-depth-600 130 246 349 1477))
+  '((defaults 152 251 376 1585)
+    (hashtable-text 157 246 376 1585)
+    (exact-digits-30 141 262 376 1585)
+    (depth-3-nil 150 253 376 1585)
+    (hashtable-record-digits-5 127 276 376 1585)
+    (text-depth-600 157 246 376 1585))
   section-1-totals)
 
 (test-equal "conformance: the reasons the builder gave on the corpus"
@@ -1175,7 +1180,7 @@
 (define section-4-totals (section-4))
 
 (test-equal "agree: files read, paths followed, paths to a shadowed duplicate, and missing steps tried"
-  '(125 671 2 619)
+  '(152 698 2 646)
   section-4-totals)
 
 

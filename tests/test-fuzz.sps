@@ -1,8 +1,10 @@
 ;;; tests/test-fuzz.sps: mutation fuzzing (ADR-0012 §5).
 ;;;
-;;; Seeded byte mutations of the JSONTestSuite y_ and n_ files, up to 4 KB
-;;; (the larger ones are deep nests, which die at the depth limit and
-;;; mutate to nothing new): flip a bit, insert a random byte, insert a
+;;; Seeded byte mutations of every corpus's JSON files up to 4 KB:
+;;; JSONTestSuite's y_, n_ and i_ files, yajl's cases, SRFI 180's streams
+;;; and nativejson-benchmark's round-trip files. JSONTestSuite's two larger
+;;; files are deep nests, which die at the depth limit and mutate to nothing
+;;; new. The mutations: flip a bit, insert a random byte, insert a
 ;;; structural byte, delete a byte, duplicate a range, truncate; one to
 ;;; three of them to a mutant. Each mutant is held to these:
 ;;;
@@ -69,18 +71,28 @@
 
 ;; --- the corpus -----------------------------------------------------------------
 
-(define dir "tests/corpus/jsontestsuite/test_parsing")
+;; Every corpus of JSON texts, each a directory and the suffix of its files.
+;; parse-number-fxx's files are tables of numbers, not JSON texts; their
+;; numbers are test-float64's.
+(define corpora
+  '((jsontestsuite "tests/corpus/jsontestsuite/test_parsing" ".json")
+    (yajl "tests/corpus/yajl/cases" ".json")
+    (srfi-180 "tests/corpus/srfi-180/files" "")
+    (nativejson-benchmark "tests/corpus/nativejson-benchmark/files" ".json")))
 
-(define (prefix? p s)
-  (and (>= (string-length s) (string-length p))
-       (string=? p (substring s 0 (string-length p)))))
+;; corpus-seeds : (Listof (Pair Symbol (Listof Bytevector))), each corpus's
+;; files of at most 4 KB
+(define corpus-seeds
+  (map (lambda (c)
+         (let ((dir (cadr c)))
+           (cons (car c)
+                 (filter (lambda (bv) (<= (bytevector-length bv) 4096))
+                         (map (lambda (n) (file-bytes (string-append dir "/" n)))
+                              (corpus-files dir (caddr c)))))))
+       corpora))
 
-;; seeds : (Listof Bytevector), the y_ and n_ files of at most 4 KB
-(define seeds
-  (filter (lambda (bv) (<= (bytevector-length bv) 4096))
-          (map (lambda (n) (file-bytes (string-append dir "/" n)))
-               (filter (lambda (n) (or (prefix? "y_" n) (prefix? "n_" n)))
-                       (corpus-files dir ".json")))))
+;; seeds : (Listof Bytevector)
+(define seeds (apply append (map cdr corpus-seeds)))
 
 ;; --- mutations ------------------------------------------------------------------
 
@@ -251,16 +263,21 @@
 
 (test-begin "fuzz")
 
+(test-equal "fuzz: the seeds are every corpus's files of at most 4 KB"
+  '((jsontestsuite . 316) (yajl . 58) (srfi-180 . 5) (nativejson-benchmark . 27))
+  (map (lambda (c) (cons (car c) (length (cdr c)))) corpus-seeds))
+
 (test-equal "fuzz: no mutant breaks an invariant"
   '()
   (property-failures run 'invariants 1 groups gen-group check shrinks tally))
 
-;; What the cases reached. Measured at the default seed and three others:
-;; 88% of cases fell in two or more non-empty feeds (the rest are mutants of
-;; 0 or 1 bytes, and short ones whose draws were empty), so 80% is the floor,
-;; and the property's 4000 groups make a dip below it a change in the
-;; schedule or the corpus, not luck. Accepted several-value cases with mode 1
-;; were 43 to 60 of 20000.
+;; What the cases reached. Measured at the default seed and seeds 1, 2 and
+;; 3, with every corpus's seeds (2026-11-08): 89.5 to 89.9% of cases fell in
+;; two or more non-empty feeds (the rest are mutants of 0 or 1 bytes, and
+;; short ones whose draws were empty), so 80% is the floor, and the
+;; property's 4000 groups make a dip below it a change in the schedule or the
+;; corpus, not luck. Accepted several-value cases with mode 1 were 40 to 57
+;; of 20000.
 (define (count key) (let ((p (assq key (tally-counts tally)))) (if p (cdr p) 0)))
 
 (test-equal "fuzz: the mutants were accepted and rejected, for many reasons, with the depth limit reached"

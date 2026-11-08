@@ -2,7 +2,8 @@
 ;;; tests/test-tree.sps: the values (jsonparse tree) builds (ADR-0006,
 ;;; ADR-0011, ADR-0017).
 ;;;
-;;; 1. The differential. For every JSONTestSuite file and every yajl case,
+;;; 1. The differential. For every JSONTestSuite file, every yajl case and
+;;;    every nativejson-benchmark round-trip file,
 ;;;    under the defaults and four option sets that together use every
 ;;;    non-default value of number-mode, object-mode, null, digit-limit and
 ;;;    depth-limit, the builder's results and value must equal the
@@ -181,18 +182,21 @@
 
 (define jts-dir "tests/corpus/jsontestsuite/test_parsing/")
 (define yajl-dir "tests/corpus/yajl/cases/")
+(define nj-dir "tests/corpus/nativejson-benchmark/files/")
 
 (define corpus
   (append
    (map (lambda (f) (cons (string-append jts-dir f) (file-bytes (string-append jts-dir f))))
         (corpus-files jts-dir ".json"))
    (map (lambda (f) (cons (string-append yajl-dir f) (file-bytes (string-append yajl-dir f))))
-        (corpus-files yajl-dir ".json"))))
+        (corpus-files yajl-dir ".json"))
+   (map (lambda (f) (cons (string-append nj-dir f) (file-bytes (string-append nj-dir f))))
+        (corpus-files nj-dir ".json"))))
 
 (test-begin "tree")
 
-(test-equal "the corpus is 376 files, 23 of them over 64 bytes"
-  '(376 23)
+(test-equal "the corpus is 403 files, 23 of them over 64 bytes"
+  '(403 23)
   (list (length corpus)
         (length (filter (lambda (f) (> (bytevector-length (cdr f)) 64)) corpus))))
 

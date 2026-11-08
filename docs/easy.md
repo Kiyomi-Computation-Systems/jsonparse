@@ -90,6 +90,7 @@ For a log of many values, one a line (JSON Lines), or RFC 7464's records:
 - **A bad record raises a `&json-record-error`:** a `&json-error` whose
   offset counts bytes from the stream's start, plus `json-error-record`,
   the record's number from 1. In `lines` that is the line number.
+  `json-record-error?` tells it from other errors.
 - **To skip bad records instead, give a procedure before the options.** It
   gets each `&json-record-error`, and may raise it to stop:
 

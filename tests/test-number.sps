@@ -365,12 +365,14 @@
   (exists (lambda (x) (and (pair? x) (eq? (car x) 'number)))
           (run-machine generated-machine (whole-schedule bv) '())))
 
-;; number-files : (Listof (Pair String Bytevector)), every JSONTestSuite file
-;; and yajl case in which the reference meets a number.
+;; number-files : (Listof (Pair String Bytevector)), every JSONTestSuite file,
+;; yajl case and nativejson-benchmark round-trip file in which the reference
+;; meets a number.
 (define number-files
   (filter (lambda (f) (has-number? (cdr f)))
           (append (files-in "tests/corpus/jsontestsuite/test_parsing")
-                  (files-in "tests/corpus/yajl/cases"))))
+                  (files-in "tests/corpus/yajl/cases")
+                  (files-in "tests/corpus/nativejson-benchmark/files"))))
 
 (define lane-limits '(1000 3))
 
@@ -603,8 +605,8 @@
     (list 'runs (* (length long-files) randoms-per-file) 'failures 0 '())
     (list 'runs (car r) 'failures (cadr r) (caddr r))))
 
-(test-equal "the corpus lanes met 79 files, 4 of them over 64 bytes"
-  '(79 4) (list (length number-files) (length long-files)))
+(test-equal "the corpus lanes met 98 files, 4 of them over 64 bytes"
+  '(98 4) (list (length number-files) (length long-files)))
 
 ;; Read from the expected views, which come from the reference and the
 ;; oracle: the lanes checked each kind of outcome.
