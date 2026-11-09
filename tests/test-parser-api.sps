@@ -376,6 +376,27 @@
              (list (log-of c) f2 e2)))))))
  stop-offsets)
 
+;; escape's first call above is a plain \n. A surrogate pair is joined on
+;; another path, whose stop needs its own case: ["😀"] calls escape
+;; once, with U+1F600, when the low half's last hex digit is read at offset 14.
+;; Fed whole, then a byte at a time, the stop lands there.
+(let ((pair (bytes "[\"\\ud83d\\ude00\"]")))
+  (define (stops-on-pair)
+    (make-json-handler 'escape (lambda (c scalar) (if (= scalar #x1F600) (make-json-stop 'halt) 'ok))))
+  (define (fed-by-byte p)
+    (let loop ((i 0))
+      (let ((r (json-parser-feed! p pair i (+ i 1))))
+        (if (and (eq? (json-result-status r) 'need-input) (< (+ i 1) (bytevector-length pair)))
+            (loop (+ i 1))
+            r))))
+  (test-equal "stop from escape on a surrogate pair: whole, and a byte at a time, the error lands at the pair's end"
+    '(((error halt 14) (error halt 14)) ((error halt 14) (error halt 14)))
+    (in-order
+     (let ((p (make-json-parser (stops-on-pair))))
+       (in-order (result->list (json-parser-feed! p pair)) (result->list (json-parser-finish! p))))
+     (let ((p (make-json-parser (stops-on-pair))))
+       (in-order (result->list (fed-by-byte p)) (result->list (json-parser-finish! p)))))))
+
 ;; --- 5. results ----------------------------------------------------------------------------
 
 (let-values (((p c) (fixture (make-json-handler))))

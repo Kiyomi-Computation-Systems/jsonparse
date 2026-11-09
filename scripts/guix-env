@@ -6,7 +6,8 @@
 #   scripts/guix-env --bench ...    the same, with the benchmarks' tools
 #                                   from bench/manifest.scm too: a C
 #                                   compiler, pkg-config and yajl
-#                                   (ADR-0023). `make bench` uses it.
+#                                   (ADR-0023). `make bench` and
+#                                   `make bench-callbacks` use it.
 #
 # The container holds the toolchain and nothing of yours: no git config,
 # no agents, no tokens, no git, and no network but loopback. Edit, commit

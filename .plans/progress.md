@@ -55,6 +55,11 @@ newest first.
   about 30 minutes (ADR-0024). Every event parser but SRFI 180 is ahead of
   jsonparse. Among Scheme tree builders, Chibi, whose reader is C, is
   faster on nearly every file, and Gambit on three.
+- **Slice 13, the callback path, is done** (close-out below). `make
+  bench-callbacks` splits the callbacks' cost a value (ADR-0025). Of 8 to
+  13 ns, byte-machine's delivery is 4 to 7, the counting 1 to 3.4, and
+  jsonparse's binding about 1 to 3, after a cut that made `events` up to
+  4.5% faster. The rest of the cut is byte-machine's.
 
 ## Next
 
@@ -107,19 +112,105 @@ newest first.
     SRFI 180, Racket, guile-json, Gambit, Gerbil, Chibi, chez-json, simdjson
     and yyjson, each in a harness of its own whose counts cross-check. The
     first measurement is in ADR-0024.
-13. **The callback path,** which costs 6 to 13 ns per value against yajl's
-    1.8 or less. First separate the machine's span delivery from
-    jsonparse's handler path, then cut what is jsonparse's, which needs no
-    byte-machine change.
+13. **The callback path** (done, close-out below): `make bench-callbacks`
+    splits it, and jsonparse hands the caller's context straight through.
+    byte-machine's delivery, 4 to 7 ns a value, is the larger part left
+    (ADR-0025).
 14. **The run node** in byte-machine (plan M3, lever 2): a decision record
     there, ABI 9 to 10, a byte-machine release, and the sibling consumers'
-    parsers regenerated.
+    parsers regenerated. byte-machine's callback step and span delivery
+    can be cut under the same ABI bump (ADR-0025).
 15. **The number fast path** (lever 4).
 16. **M2's decision,** measured (ADR-0004).
 
 **Then:** M4, YAJL's options; and the rest of M5.
 
 ## Close-outs
+
+### Slice 13: the callback path (2026-11-09)
+
+- **Landed:**
+  - **`(jsonparse parser)` hands the caller's context straight through:**
+    it is byte-machine's user context. The stack's callbacks and `escape`
+    close over the parser's own state. There is no API change, and stops
+    are still checked on every return (ADR-0025).
+  - **`make bench-callbacks`:** eight lanes of `(jsonparse-bench
+    callbacks)`, timed by `bench/callbacks.sps` in turns.
+    - It splits the cost a value between byte-machine's delivery, the
+      counting and jsonparse's binding. Each split is the median of paired
+      differences, with their middle half.
+    - It writes `build/bench/callbacks.md` only when `m-count` counts what
+      the events lane counts, and every lane's tally holds.
+  - **Tests:**
+    - `tests/test-bench-callbacks.sps`;
+    - a stop from `escape` on a surrogate pair in `test-parser-api`;
+    - the parser's mutants' patterns updated, and two added:
+      `state-shared-global` and `machine-context-is-state`;
+    - `make -n bench-callbacks` in the launcher's C5 check.
+  - **Records:** ADR-0025; the global constraints; this ledger; README;
+    the comments in `bench/manifest.scm` and `scripts/guix-env`.
+- **Evidence:**
+  - `scripts/guix-env make test` runs 39 suites: `test-bench-callbacks`
+    passes 23, `test-parser-api` 195 and `test-parser-mutants` 38. The
+    launcher's test passes 106. `make check-guix`, `make check-help` and
+    `make check-bench-files` are green.
+  - **Every new check was watched fail:**
+    - 24 of 24 mutants of `(jsonparse-bench callbacks)` as merged, and 21
+      of 21 of its first form, once a test was added for the one that
+      survived;
+    - the two new parser mutants;
+    - the review's mutant that drops a stop from `escape` on a pair;
+    - C5 with `$(MAKE)` put back.
+  - **The measurement:** main's parser and this one in turn, A B A B,
+    pinned, then two `make bench` runs, in ADR-0025.
+    - `events` is 3.5% to 4.5% faster on `ints-40k`, 0.8% to 2.9% on
+      `records-2k`, and moved within noise on the rest.
+    - jsonparse's share fell from 0.9–3.0 ns a value to 1.0–2.4.
+    - The `events` gaps against yajl are 3.95× to 4.00× on `records-2k`
+      and 4.30× to 4.65× on `escaped-string`. Neither target is met.
+- **Review:** an adversarial review (Opus) found:
+  - **three defects:**
+    - `m-noop` bound two callbacks the counting lanes don't, which moved
+      1.1 to 2.4 ns a value from counting into byte-machine's share;
+    - a noise column whose claim the probes contradicted;
+    - failures that exited 255, some only after the whole run;
+  - **six gaps:**
+    - the untested stop from `escape` on a surrogate pair;
+    - nothing checked the `parse` and `j-noop` lanes' handlers;
+    - the counted list is kept in step with `parser.sls` by hand;
+    - the lanes ran in one fixed order;
+    - the whole bench container is entered for `taskset`;
+    - a value is a misleading unit on text-heavy files;
+  - **six false or unsupported claims:**
+    - unsourced figures in the ADR's Context;
+    - "what is left is byte-machine's";
+    - a `byte-machine` column said to include the steps `parse` already
+      pays;
+    - "the lanes differ only in what is bound";
+    - "only `make bench` uses the bench container";
+    - the exit code;
+  - **eight nits.**
+
+  All are fixed but these, which are recorded:
+  - the counted list kept by hand;
+  - the full container entered for `taskset`;
+  - the reset of a surrogate's high half, which no input can observe;
+  - allocation a pass, which the lanes don't report;
+  - the split floor of 1,000 values. At it, the set-up would read as up to
+    0.4 ns a value, but every timed file with a split has 27,259 values or
+    more.
+- **Known:**
+  - **The cut is smaller than the probe said.** A scratch run had put it
+    at 3% to 7%. Taking turns, A against B, it is 0.8% to 4.5% on the two
+    files dense in values.
+  - **A split moves between runs by up to 2.3 ns on the dense files,** and
+    4.8 on `gsoc-2018`, more than its middle half shows. A third run moved
+    canada's whole split. Read a split over two runs or more.
+  - **What is left of jsonparse's binding,** about 1 to 3 ns a value, is the
+    handler call, the stop check, the empty-part filter and the pair join.
+    It can't go without a new handler contract.
+  - **Next is slice 14, the run node,** with byte-machine's callback step
+    and span delivery under the same ABI bump.
 
 ### Slice 12: the other comparators (2026-11-09)
 

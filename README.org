@@ -45,7 +45,9 @@ same pages are Markdown in [[file:docs/README.md][docs/]]. [[file:CHANGELOG.md][
 public test files, and writes =build/bench/report.md=. Run it on the host: it
 downloads the files, then uses the container. Elsewhere it needs a C
 compiler, =pkg-config= and yajl, such as Homebrew's, and =BENCH_PARSERS= names
-the other parsers installed.
+the other parsers installed. =make bench-callbacks=, also run on the host,
+splits what jsonparse's callbacks cost a value between byte-machine, the
+handler's own work and jsonparse, into =build/bench/callbacks.md=.
 
 ** License
 

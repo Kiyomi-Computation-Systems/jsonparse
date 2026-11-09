@@ -48,8 +48,8 @@
 (define mutants
   (list
    (list "context-swapped"
-         (list "        'object\n        'array))"
-               "        'array\n        'object))"))
+         (list "          'object\n          'array)))"
+               "          'array\n          'object)))"))
    (list "push-skipped"
          (list "    (bytevector-u8-set! (state-stack s) (state-depth s) entry)\n    (state-depth-set! s (fx+ (state-depth s) 1)))"
                "    #f)"))
@@ -57,11 +57,11 @@
          (list "    (state-depth-set! s (fx- (state-depth s) 1)))"
                "    #f)"))
    (list "one-entry-kind"
-         (list "(list 'array-start (opener array-entry (h 'array-start)))"
-               "(list 'array-start (opener object-entry (h 'array-start)))"))
+         (list "(list 'array-start (opener s array-entry (h 'array-start)))"
+               "(list 'array-start (opener s object-entry (h 'array-start)))"))
    (list "other-entry-kind"
-         (list "(list 'object-start (opener object-entry (h 'object-start)))"
-               "(list 'object-start (opener array-entry (h 'object-start)))"))
+         (list "(list 'object-start (opener s object-entry (h 'object-start)))"
+               "(list 'object-start (opener s array-entry (h 'object-start)))"))
    (list "stack-one-short"
          (list "(make-bytevector limit 0)"
                "(make-bytevector (max 0 (- limit 1)) 0)"))
@@ -78,11 +78,11 @@
          (list "(bytevector-u8-ref (state-stack s) (fx- (state-depth s) 1))"
                "(bytevector-u8-ref (state-stack s) (fx- (state-depth s) 2))"))
    (list "bare-opener-skips-push"
-         (list "(lambda (p s) (push! s entry) callback-continue)"
-               "(lambda (p s) callback-continue)"))
+         (list "(lambda (p u) (push! s entry) callback-continue)"
+               "(lambda (p u) callback-continue)"))
    (list "bare-closer-skips-pop"
-         (list "(lambda (p s) (pop! s) callback-continue)"
-               "(lambda (p s) callback-continue)"))
+         (list "(lambda (p u) (pop! s) callback-continue)"
+               "(lambda (p u) callback-continue)"))
    ;; The stack as a ring: depth taken modulo 8, or 64, in both places.
    (list "stack-ring-8"
          (list "(bytevector-u8-set! (state-stack s) (state-depth s) entry)"
@@ -98,8 +98,18 @@
    (list "stack-shared-global"
          (list "  (define object-entry 0)"
                "  (define shared-stack (make-bytevector 65535 0))\n  (define object-entry 0)")
-         (list "(make-state (make-bytevector limit 0) 0 0 context)"
-               "(make-state shared-stack 0 0 context)"))
+         (list "(make-state (make-bytevector limit 0) 0 0)"
+               "(make-state shared-stack 0 0)"))
+   ;; One state for every parser: stack, depth and high half all shared.
+   (list "state-shared-global"
+         (list "  (define object-entry 0)"
+               "  (define shared-state (make-state (make-bytevector 65535 0) 0 0))\n  (define object-entry 0)")
+         (list "(s (make-state (make-bytevector limit 0) 0 0))"
+               "(s shared-state)"))
+   ;; The machine handed the parser's state, not the caller's context.
+   (list "machine-context-is-state"
+         (list "(make-parser jsonparse-machine (bindings handler s) context"
+               "(make-parser jsonparse-machine (bindings handler s) s"))
    ;; The high half of a surrogate pair in a library-level variable.
    (list "high-shared-global"
          (list "  (define object-entry 0)"

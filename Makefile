@@ -66,7 +66,7 @@ TIMEOUT ?= $(or $(shell command -v timeout 2>/dev/null),$(shell command -v gtime
 
 # One physical line: check-help reads it with awk, and fails if it ends in
 # a backslash.
-.PHONY: help check-help check-guix check-guix-inside submodules check-pins check-chez deps dev run generate test check-suites check-imports check-versions check-release check-corpora site-deps site check-site check-site-deps akku-deps check-akku check-akku-inside bench-files check-bench-files bench bench-inside check-bench-env-inside clean
+.PHONY: help check-help check-guix check-guix-inside submodules check-pins check-chez deps dev run generate test check-suites check-imports check-versions check-release check-corpora site-deps site check-site check-site-deps akku-deps check-akku check-akku-inside bench-files check-bench-files bench bench-inside bench-callbacks bench-callbacks-inside check-bench-env-inside clean
 
 .DEFAULT_GOAL := help
 
@@ -547,6 +547,36 @@ bench-inside: check-chez ## Write M0's files, check every file's and comparator'
 	  > $(BENCH_DIR)/report.md.part
 	@mv $(BENCH_DIR)/report.md.part $(BENCH_DIR)/report.md
 	@cat $(BENCH_DIR)/report.md
+
+# Where the callback path's time goes (ADR-0025): (jsonparse-bench
+# callbacks)'s eight lanes on the same files, by the same method, the lanes
+# taking turns, pinned and compiled ahead of time as bench-inside compiles
+# jsonparse, into objects of its own. It times no comparator, so it fetches
+# only the files, but it enters the same container, for taskset.
+# bench/callbacks.sps checks m-count's counts against the events lane's, and
+# every lane's tally, before it writes build/bench/callbacks.md.
+BENCH_CALLBACKS_OBJ     := $(BENCH_DIR)/callbacks-obj
+BENCH_CALLBACKS_LIBDIRS := src::$(BENCH_CALLBACKS_OBJ)/src:$(BYTE_MACHINE_DIR)/src::$(BENCH_CALLBACKS_OBJ)/byte-machine:bench::$(BENCH_CALLBACKS_OBJ)/bench
+bench-callbacks: ## (host) Split jsonparse's callback path's cost a value, and write build/bench/callbacks.md
+	@$(BENCH_FETCH)
+	@if [ -z "$${GUIX_ENVIRONMENT:-}" ] && command -v guix >/dev/null 2>&1; then \
+	  scripts/guix-env --bench make --no-print-directory bench-callbacks-inside \
+	    BENCH_ROUNDS='$(BENCH_ROUNDS)' BENCH_ROUND_BYTES='$(BENCH_ROUND_BYTES)' \
+	    BENCH_CPU='$(BENCH_CPU)' GOAL='$(GOAL)'; \
+	else \
+	  $(SUBMAKE) --no-print-directory bench-callbacks-inside GOAL='$(GOAL)'; \
+	fi
+
+bench-callbacks-inside: check-chez ## Write M0's files, check every file's sha256, then time the callback path's lanes and write build/bench/callbacks.md
+	@scripts/require-tools "$(GOAL)" $(CHEZ) $(if $(BENCH_PIN),taskset)
+	@mkdir -p $(BENCH_FILES_DIR)
+	@$(CHEZ) --libdirs src:$(BYTE_MACHINE_DIR)/src:bench --program bench/synthetic.sps $(BENCH_FILES_DIR)
+	@$(BENCH_FETCH) --check
+	@sh scripts/bench-machine $(BENCH_CPU) > $(BENCH_DIR)/callbacks-machine.txt
+	@rm -rf $(BENCH_CALLBACKS_OBJ)
+	@$(BENCH_PIN) $(CHEZ) --libdirs "$(BENCH_CALLBACKS_LIBDIRS)" --compile-imported-libraries --program bench/callbacks.sps \
+	  $(BENCH_DIR)/callbacks.md $(BENCH_DIR)/callbacks-machine.txt $(BENCH_ROUNDS) $(BENCH_ROUND_BYTES) $(BENCH_FILES)
+	@cat $(BENCH_DIR)/callbacks.md
 
 # What bench/manifest.scm must give `make bench`, asserted in the container
 # it makes: gcc and g++ 14, taskset, yajl and the native comparators through
