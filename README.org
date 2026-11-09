@@ -41,10 +41,11 @@ same pages are Markdown in [[file:docs/README.md][docs/]]. [[file:CHANGELOG.md][
 =scripts/guix-env=, as in =scripts/guix-env make test=. Design records are in
 [[file:.plans/decisions][.plans/decisions]], in the repository but not in release archives.
 
-=make bench= times jsonparse against [[https://github.com/lloyd/yajl][yajl]] on public test files, and writes
-=build/bench/report.md=. Run it on the host: it downloads the files, then
-uses the container. Elsewhere it needs a C compiler, =pkg-config= and yajl,
-such as Homebrew's.
+=make bench= times jsonparse against [[https://github.com/lloyd/yajl][yajl]] and eleven other JSON parsers on
+public test files, and writes =build/bench/report.md=. Run it on the host: it
+downloads the files, then uses the container. Elsewhere it needs a C
+compiler, =pkg-config= and yajl, such as Homebrew's, and =BENCH_PARSERS= names
+the other parsers installed.
 
 ** License
 
