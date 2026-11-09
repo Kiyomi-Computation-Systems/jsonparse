@@ -2,9 +2,10 @@
 ;;; compiler and pkg-config to build the native harnesses; util-linux's
 ;;; taskset, which pins every harness to one core; and the comparators, each
 ;;; with the runtime it runs on. `scripts/guix-env --bench` adds them to
-;;; manifest.scm's toolchain, `make bench` enters the container that way,
-;;; and `make check-guix` asserts each one (check-bench-env-inside). Only
-;;; `make bench` needs them: `make test` and CI never do.
+;;; manifest.scm's toolchain, `make bench` and `make bench-callbacks` enter
+;;; the container that way, and `make check-guix` asserts each one
+;;; (check-bench-env-inside). Only those two need them: `make test` and CI
+;;; never do.
 ;;;
 ;;; gcc 14 is the pin's default compiler, which the substitute servers
 ;;; build; the report names the version. SRFI 180's reference

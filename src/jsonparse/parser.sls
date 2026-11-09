@@ -186,12 +186,11 @@
 
   ;; --- the stack --------------------------------------------------------------
   ;;
-  ;; The parser's own state, the context byte-machine hands every callback:
-  ;; the stack and how many entries it holds, the high half of a surrogate
-  ;; pair, and the caller's context.
+  ;; The parser's own state: the stack and how many entries it holds, and the
+  ;; high half of a surrogate pair. The callbacks that need it close over it.
 
   (define-record-type state
-    (fields (immutable stack) (mutable depth) (mutable high) (immutable user)))
+    (fields (immutable stack) (mutable depth) (mutable high)))
 
   (define object-entry 0)
   (define array-entry 1)
@@ -204,73 +203,75 @@
     (state-depth-set! s (fx- (state-depth s) 1)))
 
   ;; The machine asks only inside a container, after a value.
-  (define (answer-context p s)
-    (if (fx=? (bytevector-u8-ref (state-stack s) (fx- (state-depth s) 1)) object-entry)
-        'object
-        'array))
+  (define (answer-context s)
+    (lambda (p u)
+      (if (fx=? (bytevector-u8-ref (state-stack s) (fx- (state-depth s) 1)) object-entry)
+          'object
+          'array)))
 
   ;; --- the callbacks ------------------------------------------------------------
   ;;
-  ;; Each takes byte-machine's (parser context ...) and calls the handler's
-  ;; procedure with the caller's context. An open pushes before its
-  ;; procedure runs, and a close pops before its procedure runs.
+  ;; Each takes byte-machine's (parser context ...). That context is the
+  ;; caller's, made byte-machine's user context, so it goes to the handler's
+  ;; procedure as it comes: no lookup on the way (ADR-0025). An open pushes
+  ;; before its procedure runs, and a close pops before its procedure runs.
 
-  (define (opener entry proc)
+  (define (opener s entry proc)
     (if proc
-        (lambda (p s) (push! s entry) (outcome (proc (state-user s))))
-        (lambda (p s) (push! s entry) callback-continue)))
+        (lambda (p u) (push! s entry) (outcome (proc u)))
+        (lambda (p u) (push! s entry) callback-continue)))
 
-  (define (closer proc)
+  (define (closer s proc)
     (if proc
-        (lambda (p s) (pop! s) (outcome (proc (state-user s))))
-        (lambda (p s) (pop! s) callback-continue)))
+        (lambda (p u) (pop! s) (outcome (proc u)))
+        (lambda (p u) (pop! s) callback-continue)))
 
   (define (event proc)
-    (lambda (p s) (outcome (proc (state-user s)))))
+    (lambda (p u) (outcome (proc u))))
 
   (define (boolean-event proc b)
-    (lambda (p s) (outcome (proc (state-user s) b))))
+    (lambda (p u) (outcome (proc u b))))
 
   (define (fragment proc)
-    (lambda (p s bv start end) (outcome (proc (state-user s) bv start end))))
+    (lambda (p u bv start end) (outcome (proc u bv start end))))
 
   ;; byte-machine hands over an empty part when the text between two escapes
   ;; is empty, or a whole string is. The handler never sees one.
   (define (text-fragment proc)
-    (lambda (p s bv start end)
+    (lambda (p u bv start end)
       (if (fx=? start end)
           callback-continue
-          (outcome (proc (state-user s) bv start end)))))
+          (outcome (proc u bv start end)))))
 
   ;; The machine announces each UTF-16 code unit in field cp, and has
   ;; already checked that a high half is followed by a low half.
-  (define (escape proc)
-    (lambda (p s)
+  (define (escape proc s)
+    (lambda (p u)
       (let ((unit (parser-field-ref p 'cp)))
         (cond
          ((fx<=? #xD800 unit #xDBFF)
           (state-high-set! s unit)
           callback-continue)
          ((fx<=? #xDC00 unit #xDFFF)
-          (outcome (proc (state-user s)
+          (outcome (proc u
                          (fx+ #x10000
                               (fx+ (fxarithmetic-shift-left (fx- (state-high s) #xD800) 10)
                                    (fx- unit #xDC00))))))
-         (else (outcome (proc (state-user s) unit)))))))
+         (else (outcome (proc u unit)))))))
 
   ;; The machine's bindings for HANDLER: the stack's always, the rest only
   ;; for the procedures it has.
-  (define (bindings handler)
+  (define (bindings handler s)
     (define (h name) (handler-ref handler name))
     (define (optional name make . extra)
       (let ((proc (h name)))
         (if proc (list (list name (apply make proc extra))) '())))
     (append
-     (list (list 'object-start (opener object-entry (h 'object-start)))
-           (list 'object-end (closer (h 'object-end)))
-           (list 'array-start (opener array-entry (h 'array-start)))
-           (list 'array-end (closer (h 'array-end)))
-           (list 'context answer-context))
+     (list (list 'object-start (opener s object-entry (h 'object-start)))
+           (list 'object-end (closer s (h 'object-end)))
+           (list 'array-start (opener s array-entry (h 'array-start)))
+           (list 'array-end (closer s (h 'array-end)))
+           (list 'context (answer-context s)))
      (optional 'null event)
      (let ((proc (h 'boolean)))
        (if proc
@@ -283,7 +284,7 @@
      (optional 'string-start event)
      (let ((proc (h 'chars)))
        (if proc (list (list 'chars-data (text-fragment proc))) '()))
-     (optional 'escape escape)
+     (optional 'escape escape s)
      (optional 'string-end event)
      (optional 'key-start event)
      (optional 'key-end event)))
@@ -315,9 +316,9 @@
        (unless (json-options? options)
          (assertion-violation 'make-json-parser "not an options record" options))
        (let* ((limit (json-options-depth-limit options))
-              (s (make-state (make-bytevector limit 0) 0 0 context)))
+              (s (make-state (make-bytevector limit 0) 0 0)))
          (new-json-parser
-          (make-parser jsonparse-machine (bindings handler) s
+          (make-parser jsonparse-machine (bindings handler s) context
                        (list (cons 'depth-left limit)
                              (cons 'mode (if (eq? (json-options-stream options) 'values)
                                              mode-allow-multiple

@@ -495,7 +495,7 @@ check "C4d no suites: says so" grep -Fxq "test: no suites: nothing matches tests
 # under -n, so a target whose recipe would enter the container that way
 # would install a package or run the benchmarks. With a stub guix first on
 # PATH, scripts/guix-env would exec the stub, which records that it ran.
-for target in bench check-akku; do
+for target in bench bench-callbacks check-akku; do
   reset_stubs guix
   ( env -i HOME="$home" PATH="$stubs:$PATH" "$make_bin" -n --no-print-directory -C "$root" "$target" ) \
     >"$tmp/out" 2>"$tmp/err"

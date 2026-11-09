@@ -261,6 +261,12 @@ record disagree, the record wins and this file gets fixed.
   report holds it to. It reads "too slow", its counts are still
   cross-checked, and the report gives that pass's time and rate. A target's
   lane too slow to time stops the report (ADR-0024).
+- **`make bench-callbacks` splits the callback path's cost a value** between
+  byte-machine, the handler's own work and jsonparse, with lanes of
+  `(jsonparse-bench callbacks)` taking turns, by ADR-0023's method on the
+  same files. A split is the median of the turns' paired differences, with
+  their middle half. It writes its report only when `m-count` counts what
+  the events lane counts, and every lane's tally holds (ADR-0025).
 - **Comparators not in Guix are fetched on the host,** pinned by sha256 in
   `bench/comparators.lock`, never committed, and on a Guix host run only in
   the container (ADR-0024).
@@ -301,8 +307,9 @@ record disagree, the record wins and this file gets fixed.
   network but loopback and no git; fetching runs on the host (ADR-0008).
 - **`scripts/guix-env --bench` adds `bench/manifest.scm`'s tools:** yajl,
   gcc 14, pkg-config, taskset, and every comparator Guix packages, with its
-  runtime. Only `make bench` uses it, and `make check-guix` asserts each
-  tool, by version where it states one (ADR-0013, ADR-0023, ADR-0024).
+  runtime. Only `make bench` and `make bench-callbacks` use it, and `make
+  check-guix` asserts each tool, by version where it states one (ADR-0013,
+  ADR-0023, ADR-0024, ADR-0025).
 - **A recipe that starts another make names it `$(SUBMAKE)`, never
   `$(MAKE)`:** make runs a line naming `$(MAKE)` even under `-n`.
   `tests/guix-env-launcher.sh` holds that for `bench` and `check-akku`.
