@@ -357,30 +357,34 @@ check-akku-inside: check-chez ## Install the archives make check-akku wrote, off
 	@CHEZ=$(CHEZ) sh tests/check-akku.sh install $(BUILD_DIR)/check-akku
 
 # --- the benchmarks ------------------------------------------------------------
-# M3's measurements (ADR-0013, ADR-0023): jsonparse against yajl on the files
-# bench/files.lock pins, five fetched and M0's three written by
-# bench/synthetic.sps. `make test` and CI never run them. `make bench` runs
-# on the host: it fetches the public files there, where the network is, then
-# runs bench-inside in the container with bench/manifest.scm's tools
-# (`scripts/guix-env --bench`) on a Guix host, or directly elsewhere, where
-# cc, pkg-config and yajl come from Homebrew or the like.
+# M3's measurements (ADR-0013, ADR-0023, ADR-0024): jsonparse against yajl
+# and the comparators BENCH_PARSERS names, on the files bench/files.lock
+# pins, five fetched and M0's three written by bench/synthetic.sps. `make
+# test` and CI never run them. `make bench` runs on the host: it fetches the
+# public files and the comparators bench/comparators.lock pins there, where
+# the network is, then runs bench-inside in the container with
+# bench/manifest.scm's tools (`scripts/guix-env --bench`) on a Guix host, or
+# directly elsewhere, where cc, pkg-config, yajl and the comparators come
+# from Homebrew or the like.
 #
-# bench-inside checks every file's sha256 before it times anything, and
-# times exactly the files the lock names, in the directory it checked:
-# scripts/fetch-bench-files reads the lock, every time, with BENCH_LOCK and
-# BENCH_DEST set here. It builds yajl's harness, bench/yajl-bench.c, with
-# BENCH_CFLAGS. jsonparse's libraries, byte-machine's runtime and the
-# harness are compiled ahead of time into a fresh $(BENCH_OBJ), at Chez's
-# default optimize level. Both harnesses run pinned by taskset to
-# BENCH_CPU, scripts/bench-cpu's fastest core, unless it is empty, as on
-# macOS. The report, build/bench/report.md, replaces the last one only if
-# the two harnesses' results cross-check (bench/report.sps).
+# bench-inside checks every file's and comparator's sha256 before it times
+# anything, and times exactly the files the lock names, in the directory it
+# checked: scripts/fetch-bench-files reads the lock, every time, with
+# BENCH_LOCK and BENCH_DEST set here. It builds yajl's harness,
+# bench/yajl-bench.c, with BENCH_CFLAGS, then each comparator's.
+# jsonparse's libraries, byte-machine's runtime and the harness are compiled
+# ahead of time into a fresh $(BENCH_OBJ), at Chez's default optimize level.
+# Every harness runs pinned by taskset to BENCH_CPU, scripts/bench-cpu's
+# fastest core, unless it is empty, as on macOS. The report,
+# build/bench/report.md, replaces the last one only if the harnesses'
+# results cross-check (bench/report.sps).
 #
 # The container lets no variable in, so `make bench` hands BENCH_ROUNDS,
-# BENCH_ROUND_BYTES, BENCH_CFLAGS, BENCH_CPU and GOAL to bench-inside on its
-# command line, and BENCH_CC only if you set it: the host's choice may not
-# exist inside. It runs the inner make as $(SUBMAKE): under -n, a line naming
-# $(MAKE) would run the whole benchmark.
+# BENCH_ROUND_BYTES, BENCH_CFLAGS, BENCH_CPU, BENCH_PARSERS and GOAL to
+# bench-inside on its command line, and BENCH_DIVISORS, BENCH_CC and
+# BENCH_CXX only if you set them: the host's compilers may not exist inside.
+# It runs the inner make as $(SUBMAKE): under -n, a line naming $(MAKE) would
+# run the whole benchmark.
 #
 # yajl.pc's Cflags name include/yajl, but the harness includes <yajl/...>,
 # so the prefix's include/ goes on the path first.
@@ -402,53 +406,174 @@ BENCH_FETCH   := BENCH_LOCK=$(BENCH_LOCK) BENCH_DEST=$(BENCH_FILES_DIR) sh scrip
 BENCH_FILES    = $$($(BENCH_FETCH) --list | sed 's|^|$(BENCH_FILES_DIR)/|')
 BENCH_LIBDIRS := src::$(BENCH_OBJ)/src:$(BYTE_MACHINE_DIR)/src::$(BENCH_OBJ)/byte-machine:bench::$(BENCH_OBJ)/bench
 
-bench-files: ## (host) Download the benchmarks' public input files, as bench/files.lock pins them
+# The comparators (ADR-0024). BENCH_PARSERS names the ones to run, all eleven
+# by default; jsonparse and yajl always run. Each has the tools it needs, a
+# build step and a command, which takes ROUNDS ROUND-BYTES FILE... and writes
+# its results on stdout. A slow one reads smaller rounds: BENCH_DIVISORS gives
+# PARSER=N, and it reads BENCH_ROUND_BYTES / N a round, never less than a
+# byte. SRFI 180 and chez-json read a hundredth: one pass a round of
+# ints-40k.json, the slowest file each times, as bench/chez-peers.sps times no
+# lane whose first pass takes over 10 s (ADR-0024). SRFI 180, chez-json and
+# Jackson are fetched on the host, as bench/comparators.lock pins them; the
+# rest come from bench/manifest.scm, or Homebrew on the Mac, where
+# BENCH_PARSERS names the ones installed.
+BENCH_COMPARATORS := rapidjson jackson srfi-180 racket guile-json gambit gerbil chibi chez-json simdjson yyjson
+BENCH_PARSERS     ?= $(BENCH_COMPARATORS)
+BENCH_DIVISORS    ?= srfi-180=100 chez-json=100
+# The C++ compiler: c++, or g++ where there is no c++.
+BENCH_CXX         ?= $(or $(if $(shell command -v c++ 2>/dev/null),c++),$(if $(shell command -v g++ 2>/dev/null),g++),c++)
+BENCH_CMP_DIR     := $(BENCH_DIR)/comparators
+BENCH_CMP_FETCH   := BENCH_LOCK=bench/comparators.lock BENCH_DEST=$(BENCH_CMP_DIR) sh scripts/fetch-bench-files
+BENCH_JACKSON_JAR := $(BENCH_CMP_DIR)/jackson-core-2.23.0.jar
+# A parser's round bytes, in a recipe.
+bench-round-bytes = $$(( $(BENCH_ROUND_BYTES) / $(call bench-divisor,$(1)) > 0 ? $(BENCH_ROUND_BYTES) / $(call bench-divisor,$(1)) : 1 ))
+bench-divisor     = $(or $(patsubst $(1)=%,%,$(filter $(1)=%,$(BENCH_DIVISORS))),1)
+# A native harness: compiler, pkg-config name, source; built as bench/NAME-bench.
+bench-native      = $(1) $(BENCH_CFLAGS) -DBENCH_CFLAGS='"$(BENCH_CFLAGS)"' -Ibench $$(pkg-config --cflags $(2)) \
+                    -o $(BENCH_DIR)/$(basename $(notdir $(3))) $(3) $$(pkg-config --libs $(2))
+
+BENCH_TOOLS_rapidjson   = $(BENCH_CXX) pkg-config
+BENCH_PKG_rapidjson     = RapidJSON
+BENCH_BUILD_rapidjson   = $(call bench-native,$(BENCH_CXX),RapidJSON,bench/rapidjson-bench.cc)
+BENCH_RUN_rapidjson     = $(BENCH_DIR)/rapidjson-bench
+BENCH_TOOLS_simdjson    = $(BENCH_CXX) pkg-config
+BENCH_PKG_simdjson      = simdjson
+BENCH_BUILD_simdjson    = $(call bench-native,$(BENCH_CXX),simdjson,bench/simdjson-bench.cc)
+BENCH_RUN_simdjson      = $(BENCH_DIR)/simdjson-bench
+BENCH_TOOLS_yyjson      = $(BENCH_CC) pkg-config
+BENCH_PKG_yyjson        = yyjson
+BENCH_BUILD_yyjson      = $(call bench-native,$(BENCH_CC),yyjson,bench/yyjson-bench.c)
+BENCH_RUN_yyjson        = $(BENCH_DIR)/yyjson-bench
+BENCH_TOOLS_jackson     = java javac
+BENCH_BUILD_jackson     = javac -d $(BENCH_DIR)/jackson -cp $(BENCH_JACKSON_JAR) bench/JacksonBench.java
+BENCH_RUN_jackson       = java -cp $(BENCH_JACKSON_JAR):$(BENCH_DIR)/jackson JacksonBench
+# racket-minimal has no `raco make`: compiler/cm is the library it runs.
+# Compiled files go under build/, by an absolute root.
+BENCH_TOOLS_racket      = racket
+BENCH_RACKET_ROOTS      = PLTCOMPILEDROOTS=$(CURDIR)/$(BENCH_DIR)/racket:.
+BENCH_BUILD_racket      = env $(BENCH_RACKET_ROOTS) racket -l racket/base -l compiler/cm -e '(managed-compile-zo "bench/racket-bench.rkt")'
+BENCH_RUN_racket        = env $(BENCH_RACKET_ROOTS) racket bench/racket-bench.rkt
+BENCH_TOOLS_guile-json  = guile guild
+BENCH_BUILD_guile-json  = mkdir -p $(BENCH_DIR)/guile && GUILE_AUTO_COMPILE=0 guild compile -o $(BENCH_DIR)/guile/guile-bench.go bench/guile-bench.scm >/dev/null
+BENCH_RUN_guile-json    = env GUILE_AUTO_COMPILE=0 guile --no-auto-compile -c '(load-compiled "$(BENCH_DIR)/guile/guile-bench.go")'
+# gsc -exe can't link (import (_json)), so the installed _json.scm is
+# compiled into the program, unchanged; everything compiles from build/,
+# where gsc writes its C.
+BENCH_TOOLS_gambit      = gsc
+BENCH_BUILD_gambit      = mkdir -p $(BENCH_DIR)/gambit && lib=$$(gsc -e '(display (path-expand "~~lib"))') && \
+                          cp -f "$$lib"/_json/_json*.scm bench/gambit-bench.scm $(BENCH_DIR)/gambit/ && chmod u+w $(BENCH_DIR)/gambit/*.scm && \
+                          gsc -exe -o $(BENCH_DIR)/gambit/gambit-bench $(BENCH_DIR)/gambit/_json.scm $(BENCH_DIR)/gambit/gambit-bench.scm
+BENCH_RUN_gambit        = $(BENCH_DIR)/gambit/gambit-bench
+BENCH_TOOLS_gerbil      = gxc
+BENCH_BUILD_gerbil      = mkdir -p $(BENCH_DIR)/gerbil/lib && GERBIL_PATH=$(CURDIR)/$(BENCH_DIR)/gerbil/lib gxc -exe -o $(BENCH_DIR)/gerbil/gerbil-bench bench/gerbil-bench.ss
+BENCH_RUN_gerbil        = $(BENCH_DIR)/gerbil/gerbil-bench
+# Chibi interprets; at its default heap the collector thrashes in tree+walk.
+BENCH_TOOLS_chibi       = chibi-scheme
+BENCH_BUILD_chibi       = true
+BENCH_RUN_chibi         = chibi-scheme -h 1G bench/chibi-bench.scm
+# SRFI 180 and chez-json run on Chez in bench/chez-peers.sps, compiled ahead
+# of time into a fresh directory of their own, once when both run. chez-json's
+# file is copied to json/parser.scm, its library's path. The compile is a step
+# of its own: Chez names what it compiles on stdout, where the results go. Its
+# reset handler makes a failed compile exit 1; piped Chez would exit 0.
+BENCH_PEERS_DIR         = $(BENCH_DIR)/chez-peers
+BENCH_PEERS_LIBDIRS     = src::$(BENCH_PEERS_DIR)/obj/src:$(BYTE_MACHINE_DIR)/src::$(BENCH_PEERS_DIR)/obj/byte-machine:bench::$(BENCH_PEERS_DIR)/obj/bench:$(BENCH_PEERS_DIR)/lib::$(BENCH_PEERS_DIR)/obj/lib
+BENCH_BUILD_PEERS       = rm -rf $(BENCH_PEERS_DIR)/obj && mkdir -p $(BENCH_PEERS_DIR)/lib/json && \
+                          cp -f $(BENCH_CMP_DIR)/chez-json-parser.scm $(BENCH_PEERS_DIR)/lib/json/parser.scm && \
+                          printf '(reset-handler (lambda () (exit 1)))\n(import (jsonparse-bench) (jsonparse-bench walks) (jsonparse-bench srfi-180) (json parser))\n' | \
+                          $(CHEZ) -q --libdirs '$(BENCH_PEERS_LIBDIRS)' --compile-imported-libraries >/dev/null
+BENCH_BUILD_srfi-180    = $(BENCH_BUILD_PEERS)
+BENCH_RUN_srfi-180      = $(CHEZ) --libdirs '$(BENCH_PEERS_LIBDIRS)' --program bench/chez-peers.sps srfi-180
+BENCH_BUILD_chez-json   = $(if $(filter srfi-180,$(BENCH_PARSERS)),true,$(BENCH_BUILD_PEERS))
+BENCH_RUN_chez-json     = $(CHEZ) --libdirs '$(BENCH_PEERS_LIBDIRS)' --program bench/chez-peers.sps chez-json
+
+bench-files: ## (host) Download the benchmarks' public input files and fetched comparators, as bench/files.lock and bench/comparators.lock pin them
 	@$(BENCH_FETCH)
+	@$(BENCH_CMP_FETCH)
 
 check-bench-files: ## Test scripts/fetch-bench-files offline, against a lock of its own
 	@sh tests/fetch-bench-files.sh
 
-bench: bench-files ## (host) Time jsonparse against yajl on the pinned files, and write build/bench/report.md
+bench: bench-files ## (host) Time jsonparse against yajl and the comparators BENCH_PARSERS names, and write build/bench/report.md
 	@if [ -z "$${GUIX_ENVIRONMENT:-}" ] && command -v guix >/dev/null 2>&1; then \
 	  scripts/guix-env --bench make --no-print-directory bench-inside \
 	    BENCH_ROUNDS='$(BENCH_ROUNDS)' BENCH_ROUND_BYTES='$(BENCH_ROUND_BYTES)' \
 	    BENCH_CFLAGS='$(BENCH_CFLAGS)' BENCH_CPU='$(BENCH_CPU)' GOAL='$(GOAL)' \
-	    $(if $(filter command line environment,$(origin BENCH_CC)),BENCH_CC='$(BENCH_CC)'); \
+	    BENCH_PARSERS='$(BENCH_PARSERS)' \
+	    $(if $(filter command line environment,$(origin BENCH_DIVISORS)),BENCH_DIVISORS='$(BENCH_DIVISORS)') \
+	    $(if $(filter command line environment,$(origin BENCH_CC)),BENCH_CC='$(BENCH_CC)') \
+	    $(if $(filter command line environment,$(origin BENCH_CXX)),BENCH_CXX='$(BENCH_CXX)'); \
 	else \
 	  $(SUBMAKE) --no-print-directory bench-inside GOAL='$(GOAL)'; \
 	fi
 
-bench-inside: check-chez ## Write M0's files, check every file's sha256, build yajl's harness, then run both and write the report
-	@scripts/require-tools "$(GOAL)" $(CHEZ) $(BENCH_CC) pkg-config $(if $(BENCH_PIN),taskset)
+bench-inside: check-chez ## Write M0's files, check every file's and comparator's sha256, build every harness, then run them and write the report
+	@seen=" "; for p in $(BENCH_PARSERS); do \
+	  case " $(BENCH_COMPARATORS) " in *" $$p "*) ;; \
+	    *) echo "bench: $$p is not a comparator; BENCH_PARSERS takes: $(BENCH_COMPARATORS)" >&2; exit 2 ;; esac; \
+	  case "$$seen" in *" $$p "*) echo "bench: BENCH_PARSERS names $$p twice" >&2; exit 2 ;; esac; \
+	  seen="$$seen$$p "; \
+	done
+	@scripts/require-tools "$(GOAL)" $(CHEZ) $(BENCH_CC) pkg-config $(if $(BENCH_PIN),taskset) \
+	  $(sort $(foreach p,$(BENCH_PARSERS),$(BENCH_TOOLS_$(p))))
 	@mkdir -p $(BENCH_FILES_DIR)
 	@$(CHEZ) --libdirs src:$(BYTE_MACHINE_DIR)/src:bench --program bench/synthetic.sps $(BENCH_FILES_DIR)
 	@$(BENCH_FETCH) --check
-	@pkg-config --exists yajl || { \
-	  echo "bench: pkg-config finds no yajl. On a Guix host, make bench adds bench/manifest.scm; with Homebrew, brew install yajl pkg-config." >&2; \
-	  exit 1; }
+	@$(BENCH_CMP_FETCH) --check
+	@for m in yajl $(foreach p,$(BENCH_PARSERS),$(BENCH_PKG_$(p))); do \
+	  pkg-config --exists $$m || { \
+	    echo "bench: pkg-config finds no $$m. On a Guix host, make bench adds bench/manifest.scm; with Homebrew, install it, or leave its comparator out of BENCH_PARSERS." >&2; \
+	    exit 1; }; \
+	done
 	@$(BENCH_CC) $(BENCH_CFLAGS) -DBENCH_CFLAGS='"$(BENCH_CFLAGS)"' \
 	  -I"$$(pkg-config --variable=prefix yajl)/include" $$(pkg-config --cflags yajl) \
 	  -o $(BENCH_DIR)/yajl-bench bench/yajl-bench.c $$(pkg-config --libs yajl)
+	@$(foreach p,$(BENCH_PARSERS),echo "bench: building $(p)'s harness" >&2 && $(BENCH_BUILD_$(p)) && ) true
 	@sh scripts/bench-machine $(BENCH_CPU) > $(BENCH_DIR)/machine.txt
 	@$(BENCH_FETCH) --list > $(BENCH_DIR)/files.txt
+	@{ printf '(plan (rounds %s) (round-bytes %s) (parsers (jsonparse %s) (yajl %s)' \
+	    $(BENCH_ROUNDS) $(BENCH_ROUND_BYTES) $(BENCH_ROUND_BYTES) $(BENCH_ROUND_BYTES); \
+	  $(foreach p,$(BENCH_PARSERS),printf ' (%s %s)' $(p) $(call bench-round-bytes,$(p));) \
+	  printf '))\n'; } > $(BENCH_DIR)/plan.scm
 	@$(BENCH_PIN) $(BENCH_DIR)/yajl-bench $(BENCH_ROUNDS) $(BENCH_ROUND_BYTES) $(BENCH_FILES) > $(BENCH_DIR)/yajl.scm
 	@rm -rf $(BENCH_OBJ)
 	@$(BENCH_PIN) $(CHEZ) --libdirs "$(BENCH_LIBDIRS)" --compile-imported-libraries --program bench/run.sps \
 	  $(BENCH_DIR)/jsonparse.scm $(BENCH_ROUNDS) $(BENCH_ROUND_BYTES) $(BENCH_FILES)
+	@$(foreach p,$(BENCH_PARSERS),echo "bench: timing $(p)" >&2 && \
+	  $(BENCH_PIN) $(BENCH_RUN_$(p)) $(BENCH_ROUNDS) $(call bench-round-bytes,$(p)) $(BENCH_FILES) > $(BENCH_DIR)/$(p).scm && ) true
 	@$(CHEZ) --libdirs src:$(BYTE_MACHINE_DIR)/src:bench --program bench/report.sps \
-	  $(BENCH_DIR)/machine.txt $(BENCH_DIR)/files.txt $(BENCH_DIR)/yajl.scm $(BENCH_DIR)/jsonparse.scm \
+	  $(BENCH_DIR)/machine.txt $(BENCH_DIR)/files.txt $(BENCH_DIR)/plan.scm $(BENCH_DIR)/yajl.scm $(BENCH_DIR)/jsonparse.scm \
+	  $(foreach p,$(BENCH_PARSERS),$(BENCH_DIR)/$(p).scm) \
 	  > $(BENCH_DIR)/report.md.part
 	@mv $(BENCH_DIR)/report.md.part $(BENCH_DIR)/report.md
 	@cat $(BENCH_DIR)/report.md
 
 # What bench/manifest.scm must give `make bench`, asserted in the container
-# it makes: gcc 14, pkg-config finding yajl 2.1.0, and taskset. `make
-# check-guix` runs it.
-check-bench-env-inside: ## (inside scripts/guix-env --bench) Assert the benchmarks' tools: gcc 14, yajl 2.1.0 through pkg-config, and taskset
-	@scripts/require-tools "$(GOAL)" gcc pkg-config taskset
-	@v=$$(gcc -dumpversion); case $$v in 14|14.*) ;; *) echo "check-bench-env: gcc is $$v, not 14" >&2; exit 1 ;; esac
-	@v=$$(pkg-config --modversion yajl 2>/dev/null || echo none); [ "$$v" = 2.1.0 ] || { echo "check-bench-env: pkg-config finds yajl $$v, not 2.1.0" >&2; exit 1; }
-	@echo "check-bench-env: gcc $$(gcc -dumpversion), yajl $$(pkg-config --modversion yajl), $$(command -v taskset)"
+# it makes: gcc and g++ 14, taskset, yajl and the native comparators through
+# pkg-config, and each comparator's runtime at the version ADR-0024 names.
+# A version matches exactly, or as a prefix up to a dot: 14 takes 14.3.0.
+# `make check-guix` runs it.
+check-bench-env-inside: ## (inside scripts/guix-env --bench) Assert the benchmarks' tools: gcc 14, taskset, yajl and every comparator at its version
+	@scripts/require-tools "$(GOAL)" gcc g++ pkg-config taskset java javac racket guile guild gsc gxc chibi-scheme
+	@bad=0; \
+	expect() { case $$2 in "$$3"|"$$3".*) ;; *) echo "check-bench-env: $$1 is $$2, not $$3" >&2; bad=1 ;; esac; }; \
+	expect gcc "$$(gcc -dumpversion)" 14; \
+	expect g++ "$$(g++ -dumpversion)" 14; \
+	for m in yajl:2.1.0 RapidJSON:1.1.0 simdjson:4.6.3 yyjson:0.12.0; do \
+	  expect "pkg-config's $${m%%:*}" "$$(pkg-config --modversion $${m%%:*} 2>/dev/null || echo none)" "$${m#*:}"; \
+	done; \
+	expect java "$$(java -version 2>&1 | sed -n '1s/.*version "\([^"]*\)".*/\1/p')" 25; \
+	expect javac "$$(javac -version 2>&1 | sed -n '1s/^javac //p')" 25; \
+	expect racket "$$(racket -e '(display (version))' 2>&1)" 9.3; \
+	expect "racket's json" "$$(racket -l racket/base -l json -e '(display (jsexpr->string (list 1)))' 2>&1)" '[1]'; \
+	expect "racket's compiler/cm" "$$(racket -l racket/base -l compiler/cm -e '(display (procedure? managed-compile-zo))' 2>&1)" '#t'; \
+	expect guile "$$(guile -c '(display (version))' 2>/dev/null)" 3.0; \
+	expect guile-json "$$(guile -c '(use-modules (json)) (display (scm->json-string (vector 1)))' 2>/dev/null)" '[1]'; \
+	expect gsc "$$(gsc -v 2>&1 | sed -n '1s/^v\([^ ]*\) .*/\1/p')" 4.9.7; \
+	expect gerbil "$$(gxi --version 2>&1 | sed -n '1s/^Gerbil v\([^ ]*\) .*/\1/p')" 0.18.1; \
+	expect chibi "$$(chibi-scheme -V 2>&1 | sed -n '1s/^chibi-scheme \([^ ]*\) .*/\1/p')" 0.12.0; \
+	[ $$bad = 0 ]
+	@echo "check-bench-env: gcc and g++ $$(gcc -dumpversion), taskset, yajl, RapidJSON, simdjson, yyjson, OpenJDK, Racket, Guile and guile-json, Gambit, Gerbil, Chibi"
 
 clean: ## Remove build/
 	rm -rf build

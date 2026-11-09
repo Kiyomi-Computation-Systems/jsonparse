@@ -1,9 +1,9 @@
 # ADR-0013: Benchmarks compare with yajl and Scheme peers on public files
 
-- **Status:** Accepted, revised on 2026-11-08
+- **Status:** Accepted, revised twice on 2026-11-08 and once on 2026-11-09
 - **Date:** 2026-10-30
 - **Scope:** what jsonparse is measured against, on what input, and how
-- **Related:** plan M3; ADR-0008, ADR-0009, ADR-0023
+- **Related:** plan M3; ADR-0008, ADR-0009, ADR-0023, ADR-0024
 
 > **Revision (2026-11-08, slice 11).** ADR-0023 makes the owner's Linux NUC
 > (amd64) the reference machine for M3's targets: arm64 numbers from the M1
@@ -13,6 +13,19 @@
 > lane below, which counts every value by kind, holds the targets, and a
 > `parse` lane, M0's comparison with nothing listening, is reported beside
 > it.
+
+> **Revision (2026-11-08, slice 12).** ADR-0024 adds the other comparators,
+> each in a harness of its own. Jackson is 2.23.0 from Maven Central, pinned
+> by sha256, not Guix's 2.9.4. SRFI 180's reference implementation, chez-json
+> and that jar are fetched on the host by `bench/comparators.lock`. A slow
+> comparator reads smaller rounds, named in the report, and a comparator's
+> lane that fails or disagrees gets no rate. The comparators' tables give
+> the median alone; the table of jsonparse against yajl keeps the minimum
+> beside it.
+
+> **Revision (2026-11-09, slice 12).** A lane whose first pass takes over
+> 10 s isn't timed, and gets no rate (ADR-0024 Decision 5). SRFI 180's
+> reference implementation takes 225 s a pass on `canada.json`.
 
 ## Context
 

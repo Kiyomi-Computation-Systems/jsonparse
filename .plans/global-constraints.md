@@ -231,7 +231,7 @@ record disagree, the record wins and this file gets fixed.
   fetched on the host, checked by SHA-256, and never committed (ADR-0012,
   ADR-0013).
 - **`make bench` measures M3 on the owner's Linux NUC (amd64),** jsonparse
-  against yajl, with both harnesses pinned to one performance core. It
+  against yajl, with every harness pinned to one performance core. It
   times exactly the files `bench/files.lock` names: five fetched on the
   host, and M0's three written by `bench/synthetic.sps`. Every file's
   sha256 is checked, in the directory timed, before anything is timed
@@ -242,6 +242,28 @@ record disagree, the record wins and this file gets fixed.
   jsonparse's events counts agree, the walk's and the scan's agree with
   them, and every lane's timed passes are as many as the method says and
   counted what one pass counts, times the passes (ADR-0023).
+- **ADR-0024's eleven comparators run beside them,** each runtime in a
+  harness of its own that keeps ADR-0023's method and output. `BENCH_PARSERS` names
+  the ones to run; jsonparse and yajl always run. Each is used as its
+  documentation tells a caller to, at its defaults, and its runtime form
+  says how (ADR-0024).
+- **Only a lane that cross-checks gets a rate.** A comparator's lane that
+  rejects a file, or whose counts disagree with jsonparse's `events`, reads
+  "fails" or "disagrees", and the report says why. A `tree` or `parse` lane,
+  which counts nothing, follows its `tree+walk` or `events`. Anything else
+  wrong stops the report, as does any failure or disagreement of
+  jsonparse's or yajl's (ADR-0024).
+- **A slow comparator reads smaller rounds,** by a divisor the Makefile gives
+  it. The plan names every parser's round bytes, and the report holds each
+  harness to it. jsonparse and yajl always read the method's (ADR-0024).
+- **A lane too slow to time gets no rate.** The Chez peers' harness times no
+  lane whose first pass takes over 10 s, the method's limit, which the
+  report holds it to. It reads "too slow", its counts are still
+  cross-checked, and the report gives that pass's time and rate. A target's
+  lane too slow to time stops the report (ADR-0024).
+- **Comparators not in Guix are fetched on the host,** pinned by sha256 in
+  `bench/comparators.lock`, never committed, and on a Guix host run only in
+  the container (ADR-0024).
 - **The benchmark harness lives in `bench/`, as `(jsonparse-bench …)`,**
   outside `(jsonparse …)`. `.akkuignore` keeps it out of the package, and
   `make check-akku` holds that. `tests/test-bench.sps` tests it in
@@ -277,9 +299,10 @@ record disagree, the record wins and this file gets fixed.
 
 - **On a Guix host, build and test through `scripts/guix-env`.** It has no
   network but loopback and no git; fetching runs on the host (ADR-0008).
-- **`scripts/guix-env --bench` adds `bench/manifest.scm`'s tools,** yajl,
-  gcc 14, pkg-config and taskset. Only `make bench` uses it, and
-  `make check-guix` asserts each tool (ADR-0013, ADR-0023).
+- **`scripts/guix-env --bench` adds `bench/manifest.scm`'s tools:** yajl,
+  gcc 14, pkg-config, taskset, and every comparator Guix packages, with its
+  runtime. Only `make bench` uses it, and `make check-guix` asserts each
+  tool, by version where it states one (ADR-0013, ADR-0023, ADR-0024).
 - **A recipe that starts another make names it `$(SUBMAKE)`, never
   `$(MAKE)`:** make runs a line naming `$(MAKE)` even under `-n`.
   `tests/guix-env-launcher.sh` holds that for `bench` and `check-akku`.

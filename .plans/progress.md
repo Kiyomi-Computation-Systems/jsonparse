@@ -50,6 +50,11 @@ newest first.
   measures jsonparse against yajl, pinned to one performance core. Neither
   M3 target is met: `records-2k` is 4.1× to 4.3× behind yajl and
   `escaped-string` 4.3× to 4.6×, against 2× and 4×.
+- **Slice 12, the other comparators, is done** (close-out below). `make bench`
+  times all eleven of ADR-0013's comparators beside jsonparse and yajl, in
+  about 30 minutes (ADR-0024). Every event parser but SRFI 180 is ahead of
+  jsonparse. Among Scheme tree builders, Chibi, whose reader is C, is
+  faster on nearly every file, and Gambit on three.
 
 ## Next
 
@@ -98,9 +103,10 @@ newest first.
 11. **The benchmarks** (done, close-out below): `make bench` times jsonparse against
     yajl on eight pinned files, and the report cross-checks both harnesses'
     counts. The first measurement and its profile are in ADR-0023.
-12. **The other comparators** (ADR-0013): RapidJSON, Jackson, SRFI 180,
-    Racket, guile-json, Gambit, Gerbil, Chibi, chez-json, simdjson and
-    yyjson.
+12. **The other comparators** (done, close-out below): RapidJSON, Jackson,
+    SRFI 180, Racket, guile-json, Gambit, Gerbil, Chibi, chez-json, simdjson
+    and yyjson, each in a harness of its own whose counts cross-check. The
+    first measurement is in ADR-0024.
 13. **The callback path,** which costs 6 to 13 ns per value against yajl's
     1.8 or less. First separate the machine's span delivery from
     jsonparse's handler path, then cut what is jsonparse's, which needs no
@@ -114,6 +120,123 @@ newest first.
 **Then:** M4, YAJL's options; and the rest of M5.
 
 ## Close-outs
+
+### Slice 12: the other comparators (2026-11-09)
+
+- **Landed:**
+  - **Eleven comparators in `make bench`** (ADR-0024), in ADR-0013's lanes:
+    - RapidJSON and Jackson: `parse`, `events`;
+    - SRFI 180: `events`, `tree`, `tree+walk`;
+    - Racket, guile-json, Gambit, Gerbil, Chibi and chez-json: `tree`,
+      `tree+walk`;
+    - simdjson and yyjson, the ceilings: `tree`, `tree+walk`.
+  - **A harness per runtime** in `bench/`, each keeping ADR-0023's method
+    and output, and saying in its runtime form how its parser ran.
+    - Every harness reads a monotonic clock but Chibi's, which has only
+      gettimeofday. Guile's reads `clock_gettime` through its FFI.
+    - Every pass fails when more than whitespace follows the value.
+    - `chez-peers.sps` runs SRFI 180, through the R6RS wrapper
+      `(jsonparse-bench srfi-180)`, and chez-json.
+      `(jsonparse-bench walks)` holds their counting.
+  - **The report:**
+    - only a lane that cross-checks gets a rate. A comparator's lane that
+      fails, disagrees or is too slow to time says so, and a list says
+      why;
+    - a `tree` follows a walk that fails or disagrees, and a `parse` its
+      `events`;
+    - Event parsers, Tree builders and Ceilings sections, with medians
+      only, and only the plan's columns;
+    - rates under 1 MB/s show two significant digits;
+    - every round must be a positive whole number of nanoseconds.
+  - **The plan,** `build/bench/plan.scm`: rounds and each parser's round
+    bytes, which the report holds every harness to. SRFI 180 and chez-json
+    read a hundredth.
+  - **The pass limit:** `chez-peers.sps` times no lane whose first pass
+    takes over 10 s, and writes a `too-slow` form. The report holds it to
+    that limit. The owner chose this on 2026-11-09, over a 2.6-hour run.
+  - **`BENCH_PARSERS`** names the comparators and refuses a name given
+    twice. `BENCH_DIVISORS` reads the environment.
+  - **`bench/comparators.lock`** pins SRFI 180's body, chez-json, and
+    Jackson 2.23.0's jar, all fetched on the host.
+  - **Tools:** `bench/manifest.scm` gains every packaged comparator's
+    runtime. `check-bench-env-inside` asserts each by version, or by use
+    where none is stated.
+  - **Records:** ADR-0024; two revision notes on ADR-0013; the global
+    constraints; this ledger; README.
+- **Evidence:**
+  - `scripts/guix-env make test` runs 38 suites; `test-bench` passes 119
+    and `test-bench-walks` 35. The launcher's test passes 104. `make
+    check-guix`, `make check-help` and `make check-bench-files` are green.
+    CI runs `make check-akku`; this host has no Akku.
+  - **Every new check was watched fail:**
+    - 94 of 94 mutants of the report library in its build, the review's
+      9 of 9, and 26 of 26 since: rate-text's, the pass limit's, and the
+      review's fixes';
+    - 35 of 35 mutants of the harnesses, refused or voided by the report:
+      a pass short, timed counts off, and keys counted as strings;
+    - the Chez peers' build, which exited 0 on a failed compile;
+    - `BENCH_DIVISORS` from the environment, and a name given twice.
+  - The Chez peers' trailing-bytes check was tried on four files, and
+    Guile's clock was confirmed to read seconds since boot.
+  - **The measurement:** two pinned runs, in ADR-0024, of 29.3 and 29.4
+    minutes.
+    - The same 14 cells had no rate in both.
+    - Rates moved 1.2% at the median, but Chibi's up to 77% and Jackson's
+      up to 38%.
+- **Review:** an adversarial review (Opus) found:
+  - **four defects:**
+    - the Chez peers' build exited 0 when its compile failed;
+    - guile-json read the wall clock;
+    - `BENCH_DIVISORS` ignored the environment;
+    - the report never checked `round-ns`: a round of 0 crashed it, and a
+      negative one printed a negative rate;
+  - **six gaps:**
+    - a comparator's `tree` or `parse` lane gets a rate with nothing
+      checking its work. A yyjson `tree` that parsed nothing showed
+      3,603,000 MB/s;
+    - a counting lane proves its walk ran each pass, not its parse;
+    - nothing held the 10 s limit;
+    - `parse` didn't follow `events`;
+    - untested paths, and a name given twice caught only after the full
+      run;
+    - the fetched comparators are fetched even when not named;
+  - **nine false or unsupported claims:**
+    - that a broken comparator can neither stop a measurement nor show a
+      rate;
+    - every harness on a monotonic clock;
+    - every runtime at its defaults, though Chibi's heap is 1 GB;
+    - the fetched comparators "only inside the container";
+    - three figures, among them Gambit ahead on `gsoc-2018` by less than
+      the noise;
+    - "close-out below", with none;
+    - ADR-0013's minimum and median, where the comparators show medians;
+    - the SRFI 180 include, recorded nowhere;
+    - two overstatements in the constraints;
+  - **nits:** stale comments, the peers' build run twice, no
+    trailing-bytes check in the Chez peers, dates, and the JVM's collector
+    and JIT under pinning.
+
+  All are fixed but these, which are recorded:
+  - the first two gaps, as limits of what a rate proves (ADR-0024
+    Decision 5), the limit ADR-0023 records for jsonparse and yajl;
+  - the limit is held, but any comparator may write a `too-slow` form;
+  - untested still: `chez-peers.sps`'s too-slow and failure paths,
+    `(jsonparse-bench srfi-180)`'s shims, and the Makefile's plan writer;
+  - `chez-peers.sps` sums timed counts by position. The report would catch
+    a misordered sum.
+- **Known:**
+  - **The fetched comparators are always fetched,** so `BENCH_PARSERS=`
+    still needs the network once.
+  - **Chibi's and Jackson's rates move between runs.** Chibi's `tree`
+    rounds fall in two modes on some files, and Jackson's JIT settles at
+    different speeds. Read their cells over two runs.
+  - **Two upstream bugs voided cells:** Gerbil decodes 4-byte UTF-8 and
+    escaped surrogate pairs wrongly, and chez-json the pairs.
+  - **My slip:** an ad hoc Chez compile, with a `--libdirs` entry lacking
+    its object directory, wrote 13 `.so` files beside the sources. `make
+    test`'s import check caught them, and they were deleted by name.
+  - **Not yet run on the M1 laptop.**
+  - **Next is slice 13, the callback path.**
 
 ### Slice 11: the benchmarks (2026-11-08)
 

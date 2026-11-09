@@ -1,0 +1,18 @@
+# The comparators fetched on the host (ADR-0024), in files.lock's form:
+#
+#   NAME SHA256 SOURCE
+#
+# scripts/fetch-bench-files downloads each into build/bench/comparators and
+# checks its sha256. None is ever committed. On a Guix host each runs only
+# inside the container, which has no network.
+#
+# SRFI 180's reference implementation (MIT), its body alone: the R6RS
+# wrapper (jsonparse-bench srfi-180) gives it what its R7RS library form
+# imports.
+srfi-180-body.scm cdd5c6a115815b06f4d448dc8e17c723dd53ce7b682578ed84431dc3672ced4c https://raw.githubusercontent.com/scheme-requests-for-implementation/srfi-180/e45cb7da41dee16c13a6309655fc70a137311726/srfi/180/body.scm
+# chez-json (LGPL-3.0) at its last commit, 2017: the library (json parser).
+chez-json-parser.scm 37a3e4125e4f11b0830f8da202ee3124c949167b6fc54f6a39dcd7301ca9c7a1 https://raw.githubusercontent.com/iovxw/chez-json/a9d6a302f6ed3cdcbf21942ba07210862d6b57bc/json/parser.scm
+# Jackson's streaming parser (Apache-2.0), which needs nothing else. Pinned
+# when Maven Central's SHA-1, a9094d2712ae45481ea9152160a4fbdfdea20659,
+# matched it.
+jackson-core-2.23.0.jar 449798beb4c4ec26de9cc25b39ca2198036883fb905ca968cbef7136d19a25d9 https://repo1.maven.org/maven2/com/fasterxml/jackson/core/jackson-core/2.23.0/jackson-core-2.23.0.jar
