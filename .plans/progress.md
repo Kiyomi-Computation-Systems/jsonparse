@@ -129,8 +129,9 @@ newest first.
 14. **The run loop** (done but for its lock, close-out below): plan M3's
     lever 2, built in byte-machine 0.9.0 as a loop for a state that
     advances back to itself, with no new node kind and no ABI bump. jsonparse
-    regenerates on it (ADR-0026). The owner retakes byte-machine's own
-    baseline on the M1 laptop, M3's other exit criterion (ADR-0023).
+    regenerates on it (ADR-0026). The owner retook byte-machine's own
+    baseline on the M1 laptop at v0.9.0, M3's other exit criterion
+    (byte-machine #183).
 15. **The number fast path** (lever 4).
 16. **M2's decision,** measured (ADR-0004), before the callback cut, so that
     one ABI bump carries both.
@@ -250,6 +251,10 @@ newest first.
     - its Linux CI on #180 and #181;
     - `make check-akku` at 0.9.0;
     - every golden keeps its fingerprint.
+  - **byte-machine's `tarm64osx` baseline,** retaken by the owner on the M1
+    laptop at v0.9.0 (#183, `e86d1bd`). That meets M3's other exit
+    criterion. On the M1, #182 then fixed a pin that spelled out a
+    mutant's exact allocation, and `make test-all` passes there.
   - **Downstream, in scratch clones:** chez-httparse passes 101/101 and
     uriparse 91/91 with regenerated parsers, fingerprints unchanged.
     chez-httparse's throughput lane takes 0% to 2.6% less time, at its

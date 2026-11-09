@@ -170,5 +170,10 @@ Neither target is met. ADR-0025 had 4.00× and 3.95×, and 4.65× and 4.30×.
     `check-versions` reads only the URL's version.
 - **A jsonparse release to Akku waits for the siblings,** which must admit
   byte-machine 0.9 first (Decision 5).
-- **M3's other exit criterion, byte-machine's own baseline,** is on
-  `tarm64osx`. The owner retakes it on the M1 laptop (ADR-0023).
+- **M3's other exit criterion, byte-machine's own baseline, is met.** The
+  owner retook it on the M1 laptop at v0.9.0 (byte-machine #183,
+  `e86d1bd`).
+  - Against the baseline it replaces, from the 0.6.0 cycle, header names
+    and values take 7.8% less time and byte-at-a-time 6.2% more.
+  - Those figures mix every byte-machine change since that baseline, so
+    they don't isolate the loop.
