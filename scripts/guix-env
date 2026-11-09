@@ -3,6 +3,10 @@
 #
 #   scripts/guix-env                an interactive bash
 #   scripts/guix-env CMD [ARG...]   run CMD, e.g. `make test`
+#   scripts/guix-env --bench ...    the same, with the benchmarks' tools
+#                                   from bench/manifest.scm too: a C
+#                                   compiler, pkg-config and yajl
+#                                   (ADR-0023). `make bench` uses it.
 #
 # The container holds the toolchain and nothing of yours: no git config,
 # no agents, no tokens, no git, and no network but loopback. Edit, commit
@@ -23,15 +27,24 @@ fi
 root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$root"
 
+bench=
+if [ "${1:-}" = --bench ]; then
+  bench=1
+  shift
+fi
+
 if [ $# -eq 0 ]; then
   set -- bash
 fi
 
 # No --network: the container's one interface is loopback, so no build or
 # test can reach anything else.
-set -- time-machine -C channels.scm -- shell -m manifest.scm \
-  --container '--preserve=^(TERM|COLORTERM|LANG)$' \
+set -- --container '--preserve=^(TERM|COLORTERM|LANG)$' \
   -- sh scripts/guix-env-enter "$@"
+if [ -n "$bench" ]; then
+  set -- -m bench/manifest.scm "$@"
+fi
+set -- time-machine -C channels.scm -- shell -m manifest.scm "$@"
 
 if [ -n "${GUIX_ENV_DRY_RUN:-}" ]; then
   printf 'cd %s\n' "$PWD"

@@ -1,0 +1,32 @@
+#!/bin/sh
+# scripts/bench-machine [CPU]: prints what the benchmarks ran on as the
+# KEY: VALUE lines bench/report.sps reads (ADR-0013, ADR-0023): the date in
+# UTC, the CPU's model, the architecture, the OS, and the CPU the harnesses
+# were pinned to, with its maximum frequency and governor, or "none". The
+# model comes from /proc/cpuinfo on Linux and sysctl on macOS, and is
+# "unknown" where neither has it, as on Linux arm64, whose /proc/cpuinfo
+# names no model.
+set -eu
+pinned=${1:-}
+cpu=
+if [ -r /proc/cpuinfo ]; then
+  cpu=$(sed -n 's/^model name[[:space:]]*: //p' /proc/cpuinfo | head -n 1)
+fi
+if [ -z "$cpu" ] && command -v sysctl >/dev/null 2>&1; then
+  cpu=$(sysctl -n machdep.cpu.brand_string 2>/dev/null || true)
+fi
+printf 'date: %s\n' "$(date -u +%Y-%m-%d)"
+printf 'cpu: %s\n' "${cpu:-unknown}"
+printf 'arch: %s\n' "$(uname -m)"
+printf 'os: %s\n' "$(uname -sr)"
+if [ -z "$pinned" ]; then
+  echo 'pin: none'
+else
+  sys=/sys/devices/system/cpu/cpu$pinned/cpufreq
+  mhz=unknown
+  if [ -r "$sys/cpuinfo_max_freq" ]; then
+    mhz=$(( $(cat "$sys/cpuinfo_max_freq") / 1000 ))
+  fi
+  governor=$(cat "$sys/scaling_governor" 2>/dev/null || echo unknown)
+  printf 'pin: CPU %s, at most %s MHz, governor %s\n' "$pinned" "$mhz" "$governor"
+fi

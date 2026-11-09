@@ -1,0 +1,13 @@
+#!/bin/sh
+# scripts/bench-cpu: prints the CPU `make bench` pins both harnesses to
+# (ADR-0023). On Linux it is the highest-numbered of the CPUs with the
+# highest maximum frequency, which on a hybrid CPU is a performance core:
+# a P-core runs yajl about twice as fast as a low-power E-core. Where /sys
+# names no frequency, as on macOS, it prints nothing, and the benchmarks
+# run unpinned.
+set -eu
+for f in /sys/devices/system/cpu/cpu[0-9]*/cpufreq/cpuinfo_max_freq; do
+  [ -r "$f" ] || continue
+  cpu=${f#/sys/devices/system/cpu/cpu}
+  printf '%s %s\n' "${cpu%%/*}" "$(cat "$f")"
+done | sort -k2,2n -k1,1n | tail -n 1 | cut -d' ' -f1

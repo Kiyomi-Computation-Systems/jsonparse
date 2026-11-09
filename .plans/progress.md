@@ -43,6 +43,13 @@ newest first.
   on 2026-11-08 to release 0.1.0 after M1, ahead of the plan's M5
   (ADR-0022). The tag follows the merge, and the Akku submission waits
   for the owner.
+- **M3 began on 2026-11-08, before M2,** as ADR-0004 orders. The owner made
+  this Linux NUC the reference machine, and chose to measure jsonparse and yajl
+  first, with the other comparators next (ADR-0023).
+- **Slice 11, the benchmarks, is done** (close-out below). `make bench`
+  measures jsonparse against yajl, pinned to one performance core. Neither
+  M3 target is met: `records-2k` is 4.1× to 4.3× behind yajl and
+  `escaped-string` 4.3× to 4.6×, against 2× and 4×.
 
 ## Next
 
@@ -86,11 +93,108 @@ newest first.
     (ADR-0022). Publishing to Akku, M5's Guix package and its chez-json note
     wait.
 
-**Then, by the plan:** M3, performance, starting with the benchmarks
-(ADR-0013); M2 only if its gain still justifies a byte-machine ABI bump
-after M3; M4, YAJL's options; and the rest of M5.
+**Milestone 3, performance (ADR-0013, ADR-0023):**
+
+11. **The benchmarks** (done, close-out below): `make bench` times jsonparse against
+    yajl on eight pinned files, and the report cross-checks both harnesses'
+    counts. The first measurement and its profile are in ADR-0023.
+12. **The other comparators** (ADR-0013): RapidJSON, Jackson, SRFI 180,
+    Racket, guile-json, Gambit, Gerbil, Chibi, chez-json, simdjson and
+    yyjson.
+13. **The callback path,** which costs 6 to 13 ns per value against yajl's
+    1.8 or less. First separate the machine's span delivery from
+    jsonparse's handler path, then cut what is jsonparse's, which needs no
+    byte-machine change.
+14. **The run node** in byte-machine (plan M3, lever 2): a decision record
+    there, ABI 9 to 10, a byte-machine release, and the sibling consumers'
+    parsers regenerated.
+15. **The number fast path** (lever 4).
+16. **M2's decision,** measured (ADR-0004).
+
+**Then:** M4, YAJL's options; and the rest of M5.
 
 ## Close-outs
+
+### Slice 11: the benchmarks (2026-11-08)
+
+- **Landed:**
+  - **`make bench`** (ADR-0023): jsonparse against yajl on the eight files
+    `bench/files.lock` pins, five fetched on the host and M0's three
+    written by `bench/synthetic.sps`. Five lanes: `parse`, `events`, which
+    holds M3's targets, `tree`, `tree+walk` and `scan`.
+  - **The harnesses:**
+    - `(jsonparse-bench)` and `bench/run.sps` time jsonparse's lanes, with
+      the libraries compiled ahead of time;
+    - `bench/yajl-bench.c` times yajl's;
+    - both run pinned by `taskset` to the core `scripts/bench-cpu` picks.
+  - **The report** (`(jsonparse-bench report)`) is written only when the
+    results cross-check:
+    - one pass's counts agree across yajl, jsonparse's events, the walk
+      and the scan;
+    - every lane ran the passes the method says;
+    - the timed passes counted one pass's counts times the passes;
+    - the results name exactly the lock's files.
+  - **`scripts/fetch-bench-files`** fetches on the host and checks every
+    sha256. `--check` holds the timed directory, and `--list` gives the
+    Makefile its files.
+  - **Tools:** `bench/manifest.scm` (yajl, gcc 14, pkg-config, util-linux)
+    behind `scripts/guix-env --bench`, asserted by `make check-guix`.
+  - **`$(SUBMAKE)`** for recipes that start another make, so `make -n bench`
+    and `make -n check-akku` start nothing.
+  - **CI:** the linux job runs `make check-bench-files`.
+  - **Records:** ADR-0023; revision notes on ADR-0003, ADR-0013, ADR-0022
+    and the plan's M3; the global constraints; this ledger's M3 list.
+- **Evidence:**
+  - `scripts/guix-env make test` runs 37 suites; `test-bench` passes 74.
+    The fetch script's test passes, on the host and in Ubuntu 24.04, and
+    the launcher's passes 104. `make check-guix`, `make check-akku` and
+    `make check-help` are green.
+  - **Every new check was watched fail:**
+    - 78 of 80 mutants of the benchmark library, 23 of 23 of the fetch
+      script, 3 of 3 of the launcher, and 7 of 7 of yajl's harness, refused
+      by the report;
+    - `make check-akku` without `bench` in `.akkuignore`;
+    - `check-bench-env-inside` without util-linux;
+    - the `make -n` test with `$(MAKE)` put back.
+  - **The two surviving mutants:**
+    - a `parse` lane that also counts, which can only make jsonparse look
+      slower in a lane that holds no target;
+    - collecting time read from CPU time, which equals wall time in one
+      thread.
+  - **The measurement:** two pinned runs, in ADR-0023.
+    - Neither target is met.
+    - Rates moved up to 5.8% between runs, and gaps up to 9.8%.
+- **Review:** an adversarial review (Opus) found:
+  - **three defects:**
+    - the cross-check never saw the timed passes, so a harness timing
+      other work, or fewer passes, still reported cleanly;
+    - Homebrew's yajl include path would break the build on the M1
+      laptop;
+    - `make -n bench` ran the benchmark;
+  - **six gaps:**
+    - 11 surviving mutants;
+    - the Makefile and the fetch script read the lock differently;
+    - no core pinning on a hybrid CPU, where yajl ran 547, 336 or 253 MB/s
+      by core;
+    - `--check` not tied to the timed directory;
+    - no `check-guix` assertion for the bench tools;
+    - the events lane's unequal work on escaped strings;
+  - **six false or unsupported claims:** a rounding; the scan as the floor
+    for any Scheme parser; per-value callback costs stated without their
+    noise, and called jsonparse's own; yajl's flags; the run-to-run bound;
+    and byte-machine's baseline left unplaced;
+  - **eight nits.**
+
+  All are fixed but three, which are recorded:
+  - the events lane's asymmetry on escaped strings, measured at 5% to 6%,
+    is kept;
+  - the fetch test needs curl, since wget reads no `file://`;
+  - the report's date is UTC.
+- **Known:**
+  - **The owner runs `make bench` on the M1 laptop** (`brew install yajl
+    pkg-config`), unpinned. It adds numbers and decides nothing.
+  - **Next is slice 12, the other comparators.** The callback path follows,
+    then the run node.
 
 ### Slice 10: the first release (2026-11-08)
 

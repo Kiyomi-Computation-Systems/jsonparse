@@ -84,6 +84,23 @@ want="cd $root|guix|time-machine|-C|channels.scm|--|shell|-m|manifest.scm|--cont
 want=$want'--preserve=^(TERM|COLORTERM|LANG)$|--|sh|scripts/guix-env-enter|bash|'
 check "T1 the whole command" [ "$(lines '1,$p')" = "$want" ]
 
+# T1b: a first argument of --bench adds the benchmarks' manifest after
+# manifest.scm (ADR-0023), and is not passed on. Anywhere else it is an
+# argument like any other.
+run "$launcher" --bench make bench-inside
+want="cd $root|guix|time-machine|-C|channels.scm|--|shell|-m|manifest.scm|-m|bench/manifest.scm|--container|"
+want=$want'--preserve=^(TERM|COLORTERM|LANG)$|--|sh|scripts/guix-env-enter|make|bench-inside|'
+check "T1b --bench: exits 0" [ "$status" -eq 0 ]
+check "T1b --bench adds bench/manifest.scm, and is not passed on" [ "$(lines '1,$p')" = "$want" ]
+run "$launcher" --bench
+check "T1b --bench alone is an interactive bash" \
+  [ "$(tail_lines 4)" = "--|sh|scripts/guix-env-enter|bash|" ]
+check "T1b --bench alone adds bench/manifest.scm" has bench/manifest.scm
+run "$launcher" make --bench
+check "T1b --bench after the command passes through" \
+  [ "$(tail_lines 5)" = "--|sh|scripts/guix-env-enter|make|--bench|" ]
+check "T1b --bench after the command adds no manifest" lacks bench/manifest.scm
+
 # T2: arguments pass through verbatim, spaces and dollars included.
 run "$launcher" make "a b" '$HOME'
 check "T2 args pass through verbatim" \
@@ -473,6 +490,19 @@ check "C4c a hung suite: HUNG line" has "test: HUNG tests/test-hang.sps (no exit
 make4
 check "C4d no suites: non-zero" [ "$status" -ne 0 ]
 check "C4d no suites: says so" grep -Fxq "test: no suites: nothing matches tests/test-*.sps" "$tmp/err"
+
+# C5: `make -n` starts nothing. make runs a recipe line naming $(MAKE) even
+# under -n, so a target whose recipe would enter the container that way
+# would install a package or run the benchmarks. With a stub guix first on
+# PATH, scripts/guix-env would exec the stub, which records that it ran.
+for target in bench check-akku; do
+  reset_stubs guix
+  ( env -i HOME="$home" PATH="$stubs:$PATH" "$make_bin" -n --no-print-directory -C "$root" "$target" ) \
+    >"$tmp/out" 2>"$tmp/err"
+  status=$?
+  check "C5 make -n $target: exit 0" [ "$status" -eq 0 ]
+  check "C5 make -n $target: starts no container" [ ! -s "$started" ]
+done
 
 printf '%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

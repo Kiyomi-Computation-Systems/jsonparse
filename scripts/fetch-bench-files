@@ -1,0 +1,133 @@
+#!/bin/sh
+# scripts/fetch-bench-files [--check | --list]
+#
+# Gets the benchmarks' input files as bench/files.lock pins them (ADR-0013,
+# ADR-0023). Each line of the lock is NAME SHA256 SOURCE, where SOURCE is
+# an https:// URL, a file:// one for tests/fetch-bench-files.sh, or
+# `generated`, for a file bench/synthetic.sps writes. Run it on the host,
+# where the network is: the container has none.
+#
+# It downloads each file not already under $BENCH_DEST with the lock's
+# sha256, checks the download, and only then puts it in place. A download
+# that fails, or whose sha256 differs, is named, leaves nothing behind (a
+# file there with the wrong bytes is removed too), and fails the run once
+# the other files are done. Generated files are left alone.
+#
+# --check downloads, writes and removes nothing: it fails unless every file
+# in the lock, generated ones included, is under $BENCH_DEST with the lock's
+# sha256, naming each that isn't.
+#
+# --list prints the lock's names, one a line, in its order, and touches
+# nothing: `make bench` times the files it names.
+#
+# The lock is read whole first. A line that isn't NAME SHA256 SOURCE, with a
+# plain file name not ending in .part, 64 lower-case hex digits and a source
+# as above, a name given twice, or a lock with no file, fails the run before
+# anything else.
+#
+# BENCH_LOCK (default bench/files.lock) and BENCH_DEST (default
+# build/bench/files) exist so the test can run it on a lock of its own.
+set -eu
+
+usage() { echo "usage: fetch-bench-files [--check | --list]" >&2; exit 2; }
+mode=fetch
+case $#:${1:-} in
+  0:) ;;
+  1:--check) mode=check ;;
+  1:--list) mode=list ;;
+  *) usage ;;
+esac
+
+lock=${BENCH_LOCK:-bench/files.lock}
+dest=${BENCH_DEST:-build/bench/files}
+
+say() { echo "fetch-bench-files: $*"; }
+warn() { echo "fetch-bench-files: $*" >&2; }
+die() { echo "fetch-bench-files: $*" >&2; exit 1; }
+
+[ -f "$lock" ] || die "$lock not found"
+
+sha256() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | cut -d' ' -f1
+  else
+    shasum -a 256 "$1" | cut -d' ' -f1
+  fi
+}
+
+download() { # URL FILE
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL -o "$2" "$1" 2>/dev/null
+  else
+    wget -q -O "$2" "$1"
+  fi
+}
+
+# The lock, checked line by line, as NAME SHA256 SOURCE lines with no
+# comments: awk prints them, or names the first bad line and exits 1.
+entries=$(awk -v lock="$lock" '
+  function bad(why) { printf "fetch-bench-files: %s line %d: %s\n", lock, NR, why > "/dev/stderr"; exit 1 }
+  /^[ \t]*(#|$)/ { next }
+  {
+    if (NF != 3 || $1 !~ /^[A-Za-z0-9._-]+$/ || $1 == "." || $1 == ".." || $1 ~ /\.part$/ \
+        || $2 !~ /^[0-9a-f]+$/ || length($2) != 64 \
+        || ($3 != "generated" && $3 !~ /^https:\/\/./ && $3 !~ /^file:\/\/./))
+      bad("not NAME SHA256 SOURCE")
+    if ($1 in seen) bad($1 " is named twice")
+    seen[$1] = 1
+    print $1, $2, $3
+  }' "$lock") || exit 1
+[ -n "$entries" ] || die "$lock names no file"
+
+if [ "$mode" = list ]; then
+  printf '%s\n' "$entries" | cut -d' ' -f1
+  exit 0
+fi
+
+failed=0
+if [ "$mode" = fetch ]; then
+  mkdir -p "$dest"
+fi
+while read -r name want source; do
+  file=$dest/$name
+  if [ -f "$file" ] && [ "$(sha256 "$file")" = "$want" ]; then
+    say "$name ok"
+    continue
+  fi
+  if [ "$mode" = check ]; then
+    if [ ! -f "$file" ]; then
+      if [ "$source" = generated ]; then
+        warn "$name is missing: bench/synthetic.sps writes it"
+      else
+        warn "$name is missing: run make bench-files on the host"
+      fi
+    else
+      warn "$name has sha256 $(sha256 "$file"), not the lock's $want"
+    fi
+    failed=1
+    continue
+  fi
+  if [ "$source" = generated ]; then
+    say "$name is generated, by make bench"
+    continue
+  fi
+  rm -f "$file" "$file.part"
+  if ! download "$source" "$file.part"; then
+    rm -f "$file.part"
+    warn "$name could not be downloaded from $source"
+    failed=1
+    continue
+  fi
+  got=$(sha256 "$file.part")
+  if [ "$got" != "$want" ]; then
+    rm -f "$file.part"
+    warn "$name has sha256 $got, not the lock's $want"
+    failed=1
+    continue
+  fi
+  mv "$file.part" "$file"
+  say "$name fetched"
+done <<EOF
+$entries
+EOF
+exit "$failed"

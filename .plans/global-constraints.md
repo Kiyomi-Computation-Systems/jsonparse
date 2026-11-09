@@ -47,7 +47,7 @@ record disagree, the record wins and this file gets fixed.
 - **Only `src/`'s libraries reach a consumer's library path.** `.akkuignore`
   lists the rest, `.gitattributes` keeps `.plans` and `AGENTS.md` out of the
   archive, and `make check-akku` installs the package as a consumer would
-  (ADR-0003, ADR-0022).
+  (ADR-0003, ADR-0022, ADR-0023).
 
 ## Layers
 
@@ -230,6 +230,23 @@ record disagree, the record wins and this file gets fixed.
 - **`make test` needs no network and no comparator.** Benchmark files are
   fetched on the host, checked by SHA-256, and never committed (ADR-0012,
   ADR-0013).
+- **`make bench` measures M3 on the owner's Linux NUC (amd64),** jsonparse
+  against yajl, with both harnesses pinned to one performance core. It
+  times exactly the files `bench/files.lock` names: five fetched on the
+  host, and M0's three written by `bench/synthetic.sps`. Every file's
+  sha256 is checked, in the directory timed, before anything is timed
+  (ADR-0023).
+- **M3's targets hold on the `events` lane,** which counts every value by
+  kind, and compare medians (ADR-0013, ADR-0023).
+- **The report is written only when the harnesses cross-check:** yajl's and
+  jsonparse's events counts agree, the walk's and the scan's agree with
+  them, and every lane's timed passes are as many as the method says and
+  counted what one pass counts, times the passes (ADR-0023).
+- **The benchmark harness lives in `bench/`, as `(jsonparse-bench …)`,**
+  outside `(jsonparse …)`. `.akkuignore` keeps it out of the package, and
+  `make check-akku` holds that. `tests/test-bench.sps` tests it in
+  `make test`, and `make check-bench-files` tests the fetch script in CI
+  (ADR-0023).
 
 ## The docs site
 
@@ -260,3 +277,9 @@ record disagree, the record wins and this file gets fixed.
 
 - **On a Guix host, build and test through `scripts/guix-env`.** It has no
   network but loopback and no git; fetching runs on the host (ADR-0008).
+- **`scripts/guix-env --bench` adds `bench/manifest.scm`'s tools,** yajl,
+  gcc 14, pkg-config and taskset. Only `make bench` uses it, and
+  `make check-guix` asserts each tool (ADR-0013, ADR-0023).
+- **A recipe that starts another make names it `$(SUBMAKE)`, never
+  `$(MAKE)`:** make runs a line naming `$(MAKE)` even under `-n`.
+  `tests/guix-env-launcher.sh` holds that for `bench` and `check-akku`.
