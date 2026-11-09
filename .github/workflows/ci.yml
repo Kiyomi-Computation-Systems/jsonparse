@@ -7,7 +7,9 @@ name: CI
 #   pins with `make check-pins`, builds Chez at its floor (once, then
 #   cached), and runs `make test`, which runs check-help, check-chez,
 #   check-suites, check-versions, check-release, check-corpora,
-#   check-imports and every suite; then `make check-akku`. No benchmarks (ADR-0013).
+#   check-imports and every suite, tests/test-bench.sps included; then
+#   `make check-bench-files` and `make check-akku`. No benchmarks run
+#   (ADR-0013, ADR-0023).
 # - `site`, on amd64: the docs site's checks and build, as pages.yml runs
 #   them (ADR-0021).
 #
@@ -91,10 +93,12 @@ jobs:
         run: make check-pins
 
       # A C compiler and make for Chez, which scripts/ci/build-chez.sh
-      # configures with no X11 or curses; curl, which fetches Chez and Akku;
-      # coreutils is GNU timeout, which `make test` runs under, and sha256sum,
-      # which checks both tarballs; xz-utils unpacks Akku's. Most are already
-      # on the image: naming them keeps the job from depending on that.
+      # configures with no X11 or curses; curl, which fetches Chez and Akku,
+      # and file:// URLs in the benchmark fetch script's test; coreutils is GNU
+      # timeout, which `make test` runs under, and sha256sum, which checks
+      # both tarballs and the benchmark files' test downloads; xz-utils
+      # unpacks Akku's. Most are already on the image: naming them keeps the
+      # job from depending on that.
       - name: Install toolchain
         run: |
           sudo apt-get update -qq
@@ -180,6 +184,11 @@ jobs:
       # own process under timeout. `deps` links SRFI-64 first.
       - name: Test
         run: make test
+
+      # The benchmarks' fetch script, offline, against a lock of its own
+      # (ADR-0023). The benchmarks themselves never run in CI.
+      - name: Test the benchmark files' fetch script
+        run: make check-bench-files
 
       # The Akku package (ADR-0022): Akku 1.2.0 as scripts/akku-tool.lock pins
       # it, then the package installed as a consumer would, from the archives

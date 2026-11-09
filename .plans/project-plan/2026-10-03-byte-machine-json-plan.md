@@ -331,6 +331,16 @@ Work items:
 
 ### M3 — Performance: string bodies and number fast path
 
+**Revised 2026-11-08 (ADR-0023).** The targets are measured on the owner's
+Linux NUC (amd64), not on `tarm64osx`, and on the events lane ADR-0013 defines,
+which counts every value by kind. Step 1 is done for yajl, by `make bench`.
+The first measurement put `records-2k` at 4.1× to 4.3× and
+`escaped-string` at 4.3× to 4.6×. It found callbacks costing 6 to 13 ns
+per value against yajl's 1.8 or less: a lever this list lacks. Part of
+that cost is jsonparse's own handler path, which needs no byte-machine
+change. byte-machine's own baseline stays on `tarm64osx`, and the owner
+retakes it there when the run node lands.
+
 The measured gap is about 13× on string bodies. The levers, in the order to try
 them:
 

@@ -23,6 +23,11 @@ export CHEZ
 # reference picks up whichever recipe is running it.
 GOAL = $(strip $(if $(MAKECMDGOALS),$(MAKECMDGOALS),$@))
 
+# A recipe that starts another make names it $(SUBMAKE). make runs any recipe
+# line naming $(MAKE) itself even under -n, so `make -n check-akku` or
+# `make -n bench` would install a package or run the benchmarks.
+SUBMAKE = $(MAKE)
+
 # --- the pins ----------------------------------------------------------------
 BYTE_MACHINE_DIR := vendor/byte-machine
 BYTE_MACHINE_PIN := c1f77911efb55030df0b2cd811903d74d2ba3d64
@@ -36,13 +41,14 @@ SRFI_PIN := 7879b527f267f067416552fb989135ad1b4ea436  # the pin chez-http-server
 #
 # TEST_LIBDIRS is the suites' path: LIBDIRS; tests/, which holds
 # (jsonparse-testing); grammar/, which holds (jsonparse-grammar) for the
-# regeneration check and the interpreter; and byte-machine's test harness,
-# for its feed schedules (ADR-0012). Test code and the grammar stay off
-# LIBDIRS.
+# regeneration check and the interpreter; byte-machine's test harness, for
+# its feed schedules (ADR-0012); and bench/, which holds the benchmarks'
+# (jsonparse-bench) for tests/test-bench.sps (ADR-0023). Test code, the
+# grammar and the benchmarks stay off LIBDIRS.
 BUILD_DIR := build
 SRFI_LIBS := $(BUILD_DIR)/scheme-libs
 LIBDIRS := src:$(BYTE_MACHINE_DIR)/src:$(SRFI_LIBS)
-TEST_LIBDIRS := $(LIBDIRS):tests:grammar:$(BYTE_MACHINE_DIR)/test/support/harness
+TEST_LIBDIRS := $(LIBDIRS):tests:grammar:$(BYTE_MACHINE_DIR)/test/support/harness:bench
 
 # The generated parser and the program that writes it (ADR-0001).
 GENERATED := src/generated/jsonparse.sls
@@ -60,7 +66,7 @@ TIMEOUT ?= $(or $(shell command -v timeout 2>/dev/null),$(shell command -v gtime
 
 # One physical line: check-help reads it with awk, and fails if it ends in
 # a backslash.
-.PHONY: help check-help check-guix check-guix-inside submodules check-pins check-chez deps dev run generate test check-suites check-imports check-versions check-release check-corpora site-deps site check-site check-site-deps akku-deps check-akku check-akku-inside clean
+.PHONY: help check-help check-guix check-guix-inside submodules check-pins check-chez deps dev run generate test check-suites check-imports check-versions check-release check-corpora site-deps site check-site check-site-deps akku-deps check-akku check-akku-inside bench-files check-bench-files bench bench-inside check-bench-env-inside clean
 
 .DEFAULT_GOAL := help
 
@@ -102,10 +108,11 @@ check-help: ## Fail unless `make help` lists exactly the .PHONY targets
 	done; \
 	exit $$status
 
-check-guix: ## Test scripts/guix-env on the host, then the toolchain inside the container
+check-guix: ## Test scripts/guix-env on the host, then the toolchain inside the container and the benchmarks' one
 	@scripts/require-tools "$(GOAL)" guix
 	@sh tests/guix-env-launcher.sh
 	@scripts/guix-env make check-guix-inside
+	@scripts/guix-env --bench make --no-print-directory check-bench-env-inside
 
 check-guix-inside: ## (inside the container) Assert the pinned toolchain, isolation and loopback-only network
 	@CHEZ='$(CHEZ)' sh scripts/guix-env-selftest
@@ -343,11 +350,105 @@ check-akku: ## (host) Install the package with Akku 1.2.0 as a consumer would, a
 	@if [ -z "$${GUIX_ENVIRONMENT:-}" ] && command -v guix >/dev/null 2>&1; then \
 	  scripts/guix-env make --no-print-directory check-akku-inside; \
 	else \
-	  $(MAKE) --no-print-directory check-akku-inside; \
+	  $(SUBMAKE) --no-print-directory check-akku-inside; \
 	fi
 
 check-akku-inside: check-chez ## Install the archives make check-akku wrote, offline, and run a consumer on Akku's library path
 	@CHEZ=$(CHEZ) sh tests/check-akku.sh install $(BUILD_DIR)/check-akku
+
+# --- the benchmarks ------------------------------------------------------------
+# M3's measurements (ADR-0013, ADR-0023): jsonparse against yajl on the files
+# bench/files.lock pins, five fetched and M0's three written by
+# bench/synthetic.sps. `make test` and CI never run them. `make bench` runs
+# on the host: it fetches the public files there, where the network is, then
+# runs bench-inside in the container with bench/manifest.scm's tools
+# (`scripts/guix-env --bench`) on a Guix host, or directly elsewhere, where
+# cc, pkg-config and yajl come from Homebrew or the like.
+#
+# bench-inside checks every file's sha256 before it times anything, and
+# times exactly the files the lock names, in the directory it checked:
+# scripts/fetch-bench-files reads the lock, every time, with BENCH_LOCK and
+# BENCH_DEST set here. It builds yajl's harness, bench/yajl-bench.c, with
+# BENCH_CFLAGS. jsonparse's libraries, byte-machine's runtime and the
+# harness are compiled ahead of time into a fresh $(BENCH_OBJ), at Chez's
+# default optimize level. Both harnesses run pinned by taskset to
+# BENCH_CPU, scripts/bench-cpu's fastest core, unless it is empty, as on
+# macOS. The report, build/bench/report.md, replaces the last one only if
+# the two harnesses' results cross-check (bench/report.sps).
+#
+# The container lets no variable in, so `make bench` hands BENCH_ROUNDS,
+# BENCH_ROUND_BYTES, BENCH_CFLAGS, BENCH_CPU and GOAL to bench-inside on its
+# command line, and BENCH_CC only if you set it: the host's choice may not
+# exist inside. It runs the inner make as $(SUBMAKE): under -n, a line naming
+# $(MAKE) would run the whole benchmark.
+#
+# yajl.pc's Cflags name include/yajl, but the harness includes <yajl/...>,
+# so the prefix's include/ goes on the path first.
+BENCH_DIR         := $(BUILD_DIR)/bench
+BENCH_LOCK        := bench/files.lock
+BENCH_FILES_DIR   := $(BENCH_DIR)/files
+BENCH_OBJ         := $(BENCH_DIR)/obj
+BENCH_ROUNDS      ?= 9
+BENCH_ROUND_BYTES ?= 20000000
+# The C compiler: cc, or gcc where there is no cc, as in the container.
+BENCH_CC          ?= $(or $(if $(shell command -v cc 2>/dev/null),cc),$(if $(shell command -v gcc 2>/dev/null),gcc),cc)
+BENCH_CFLAGS      ?= -O2
+# The core to pin to; BENCH_CPU= runs unpinned. Read only by the benchmark
+# recipes, so no other target runs scripts/bench-cpu.
+BENCH_CPU         ?= $(shell $(SHELL) scripts/bench-cpu 2>/dev/null)
+BENCH_PIN      = $(if $(strip $(BENCH_CPU)),taskset -c $(strip $(BENCH_CPU)))
+BENCH_FETCH   := BENCH_LOCK=$(BENCH_LOCK) BENCH_DEST=$(BENCH_FILES_DIR) sh scripts/fetch-bench-files
+# The files to time, the lock's names under BENCH_FILES_DIR, in a recipe.
+BENCH_FILES    = $$($(BENCH_FETCH) --list | sed 's|^|$(BENCH_FILES_DIR)/|')
+BENCH_LIBDIRS := src::$(BENCH_OBJ)/src:$(BYTE_MACHINE_DIR)/src::$(BENCH_OBJ)/byte-machine:bench::$(BENCH_OBJ)/bench
+
+bench-files: ## (host) Download the benchmarks' public input files, as bench/files.lock pins them
+	@$(BENCH_FETCH)
+
+check-bench-files: ## Test scripts/fetch-bench-files offline, against a lock of its own
+	@sh tests/fetch-bench-files.sh
+
+bench: bench-files ## (host) Time jsonparse against yajl on the pinned files, and write build/bench/report.md
+	@if [ -z "$${GUIX_ENVIRONMENT:-}" ] && command -v guix >/dev/null 2>&1; then \
+	  scripts/guix-env --bench make --no-print-directory bench-inside \
+	    BENCH_ROUNDS='$(BENCH_ROUNDS)' BENCH_ROUND_BYTES='$(BENCH_ROUND_BYTES)' \
+	    BENCH_CFLAGS='$(BENCH_CFLAGS)' BENCH_CPU='$(BENCH_CPU)' GOAL='$(GOAL)' \
+	    $(if $(filter command line environment,$(origin BENCH_CC)),BENCH_CC='$(BENCH_CC)'); \
+	else \
+	  $(SUBMAKE) --no-print-directory bench-inside GOAL='$(GOAL)'; \
+	fi
+
+bench-inside: check-chez ## Write M0's files, check every file's sha256, build yajl's harness, then run both and write the report
+	@scripts/require-tools "$(GOAL)" $(CHEZ) $(BENCH_CC) pkg-config $(if $(BENCH_PIN),taskset)
+	@mkdir -p $(BENCH_FILES_DIR)
+	@$(CHEZ) --libdirs src:$(BYTE_MACHINE_DIR)/src:bench --program bench/synthetic.sps $(BENCH_FILES_DIR)
+	@$(BENCH_FETCH) --check
+	@pkg-config --exists yajl || { \
+	  echo "bench: pkg-config finds no yajl. On a Guix host, make bench adds bench/manifest.scm; with Homebrew, brew install yajl pkg-config." >&2; \
+	  exit 1; }
+	@$(BENCH_CC) $(BENCH_CFLAGS) -DBENCH_CFLAGS='"$(BENCH_CFLAGS)"' \
+	  -I"$$(pkg-config --variable=prefix yajl)/include" $$(pkg-config --cflags yajl) \
+	  -o $(BENCH_DIR)/yajl-bench bench/yajl-bench.c $$(pkg-config --libs yajl)
+	@sh scripts/bench-machine $(BENCH_CPU) > $(BENCH_DIR)/machine.txt
+	@$(BENCH_FETCH) --list > $(BENCH_DIR)/files.txt
+	@$(BENCH_PIN) $(BENCH_DIR)/yajl-bench $(BENCH_ROUNDS) $(BENCH_ROUND_BYTES) $(BENCH_FILES) > $(BENCH_DIR)/yajl.scm
+	@rm -rf $(BENCH_OBJ)
+	@$(BENCH_PIN) $(CHEZ) --libdirs "$(BENCH_LIBDIRS)" --compile-imported-libraries --program bench/run.sps \
+	  $(BENCH_DIR)/jsonparse.scm $(BENCH_ROUNDS) $(BENCH_ROUND_BYTES) $(BENCH_FILES)
+	@$(CHEZ) --libdirs src:$(BYTE_MACHINE_DIR)/src:bench --program bench/report.sps \
+	  $(BENCH_DIR)/machine.txt $(BENCH_DIR)/files.txt $(BENCH_DIR)/yajl.scm $(BENCH_DIR)/jsonparse.scm \
+	  > $(BENCH_DIR)/report.md.part
+	@mv $(BENCH_DIR)/report.md.part $(BENCH_DIR)/report.md
+	@cat $(BENCH_DIR)/report.md
+
+# What bench/manifest.scm must give `make bench`, asserted in the container
+# it makes: gcc 14, pkg-config finding yajl 2.1.0, and taskset. `make
+# check-guix` runs it.
+check-bench-env-inside: ## (inside scripts/guix-env --bench) Assert the benchmarks' tools: gcc 14, yajl 2.1.0 through pkg-config, and taskset
+	@scripts/require-tools "$(GOAL)" gcc pkg-config taskset
+	@v=$$(gcc -dumpversion); case $$v in 14|14.*) ;; *) echo "check-bench-env: gcc is $$v, not 14" >&2; exit 1 ;; esac
+	@v=$$(pkg-config --modversion yajl 2>/dev/null || echo none); [ "$$v" = 2.1.0 ] || { echo "check-bench-env: pkg-config finds yajl $$v, not 2.1.0" >&2; exit 1; }
+	@echo "check-bench-env: gcc $$(gcc -dumpversion), yajl $$(pkg-config --modversion yajl), $$(command -v taskset)"
 
 clean: ## Remove build/
 	rm -rf build

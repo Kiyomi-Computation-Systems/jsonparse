@@ -1,13 +1,19 @@
 # ADR-0022: The first release is 0.1.0, packaged with Akku 1.2.0
 
-- **Status:** Accepted
+- **Status:** Accepted, revised on 2026-11-08
 - **Date:** 2026-11-08
 - **Scope:** the version and how it moves; the Akku package and what it
   ships; Akku itself; `make check-akku`, `make check-release` and
   `scripts/akku-publish`; `CHANGELOG.md`, `README.org` and
   `docs/installing.md`
-- **Related:** ADR-0002, ADR-0003, ADR-0008, ADR-0012, ADR-0021; the plan's
-  M5
+- **Related:** ADR-0002, ADR-0003, ADR-0008, ADR-0012, ADR-0021, ADR-0023;
+  the plan's M5
+
+> **Revision (2026-11-08, slice 11).** `.akkuignore` lists `bench` too
+> (ADR-0023), and it matters as `site` and `grammar` do: without it the
+> benchmark harness's two libraries land on every consumer's path, and
+> `make check-akku` fails. The benchmarks ship in the archive, as the
+> suites do.
 
 ## Context
 

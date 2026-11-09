@@ -1,9 +1,18 @@
 # ADR-0013: Benchmarks compare with yajl and Scheme peers on public files
 
-- **Status:** Accepted
+- **Status:** Accepted, revised on 2026-11-08
 - **Date:** 2026-10-30
 - **Scope:** what jsonparse is measured against, on what input, and how
-- **Related:** plan M3; ADR-0008, ADR-0009
+- **Related:** plan M3; ADR-0008, ADR-0009, ADR-0023
+
+> **Revision (2026-11-08, slice 11).** ADR-0023 makes the owner's Linux NUC
+> (amd64) the reference machine for M3's targets: arm64 numbers from the M1
+> laptop add, and decide nothing. Slice 11 measures jsonparse and yajl, and
+> the next slice adds the other comparators. The benchmark manifest is
+> `bench/manifest.scm`, which `scripts/guix-env --bench` adds. The events
+> lane below, which counts every value by kind, holds the targets, and a
+> `parse` lane, M0's comparison with nothing listening, is reported beside
+> it.
 
 ## Context
 

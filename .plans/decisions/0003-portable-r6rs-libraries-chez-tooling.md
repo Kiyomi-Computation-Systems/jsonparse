@@ -9,6 +9,11 @@
 > in circuit's form: `.claude`, `.plans`, `.superpowers`, `AGENTS.md`,
 > `build`, `grammar`, `site`, `tests` and `vendor`. `make check-akku` now
 > exists, and runs with Akku 1.2.0.
+>
+> **Revision (2026-11-08, slice 11).** The benchmark harness is tooling too,
+> in `bench/` as `(jsonparse-bench …)`, and uses Chez's clock and collector
+> (ADR-0023). `.akkuignore` lists `bench`, and `make check-akku` fails
+> without that entry.
 
 ## Context
 
