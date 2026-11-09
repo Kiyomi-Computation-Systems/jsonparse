@@ -256,7 +256,9 @@ newest first.
     resolution.
   - **jsonparse:**
     - `make test` runs 39 suites green, with `check-versions` held back
-      until the lock moves;
+      until the lock moves. The owner ran the same on the M1 laptop
+      (`tarm64osx`, Chez 10.4.1) on 2026-11-09: 39 suites green, and
+      `make check-pins` holds;
     - seven pinned runs of the regenerated parser against `main`, in three
       rotations, and two `make bench` runs (ADR-0026);
     - two new cases in `test-parser-alloc`, each at two sizes: whitespace at
