@@ -253,8 +253,9 @@ newest first.
     - every golden keeps its fingerprint.
   - **byte-machine's `tarm64osx` baseline,** retaken by the owner on the M1
     laptop at v0.9.0 (#183, `e86d1bd`). That meets M3's other exit
-    criterion. On the M1, #182 then fixed a pin that spelled out a
-    mutant's exact allocation, and `make test-all` passes there.
+    criterion. On the M1, `make test-all` at v0.9.0 failed only the
+    mutation lane, on a pin that spelled out a mutant's exact allocation.
+    #182 fixed it, and the mutation lane then passed there.
   - **Downstream, in scratch clones:** chez-httparse passes 101/101 and
     uriparse 91/91 with regenerated parsers, fingerprints unchanged.
     chez-httparse's throughput lane takes 0% to 2.6% less time, at its
