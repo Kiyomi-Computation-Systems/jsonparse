@@ -60,6 +60,11 @@ newest first.
   13 ns, byte-machine's delivery is 4 to 7, the counting 1 to 3.4, and
   jsonparse's binding about 1 to 3, after a cut that made `events` up to
   4.5% faster. The rest of the cut is byte-machine's.
+- **Slice 14, the run loop, waits for Akku to list byte-machine 0.9.0**
+  (close-out below). byte-machine 0.9.0 compiles a state's loop back to
+  itself into a tight loop, at the same ABI, and jsonparse regenerates on it.
+  `gsoc-2018` takes about 40% less time, and neither M3 target moves
+  (ADR-0026). The PR is a draft until its `Akku.lock` can move.
 - **Issue 17, `read-json` on a port whose bytes are still coming, is
   documented** (close-out below). circuit found that a refusal waits for
   16 KiB or the port's end, and that nothing promised a port's raise
@@ -121,12 +126,19 @@ newest first.
     splits it, and jsonparse hands the caller's context straight through.
     byte-machine's delivery, 4 to 7 ns a value, is the larger part left
     (ADR-0025).
-14. **The run node** in byte-machine (plan M3, lever 2): a decision record
-    there, ABI 9 to 10, a byte-machine release, and the sibling consumers'
-    parsers regenerated. byte-machine's callback step and span delivery
-    can be cut under the same ABI bump (ADR-0025).
+14. **The run loop** (done but for its lock, close-out below): plan M3's
+    lever 2, built in byte-machine 0.9.0 as a loop for a state that
+    advances back to itself, with no new node kind and no ABI bump. jsonparse
+    regenerates on it (ADR-0026). The owner retakes byte-machine's own
+    baseline on the M1 laptop, M3's other exit criterion (ADR-0023).
 15. **The number fast path** (lever 4).
-16. **M2's decision,** measured (ADR-0004).
+16. **M2's decision,** measured (ADR-0004), before the callback cut, so that
+    one ABI bump carries both.
+17. **The callback step and span delivery inlined** in byte-machine: ABI 9 to
+    10, with M2 if it is taken, and the sibling consumers' parsers
+    regenerated (ADR-0002, ADR-0025, ADR-0026). Its prototype took 12% to 13%
+    off `records-2k`. Then the M3 targets are revisited with the owner, if
+    they are still missed (ADR-0023).
 
 **Then:** M4, YAJL's options; and the rest of M5.
 
@@ -202,6 +214,106 @@ newest first.
     raise,** though rows hold it.
   - **Circuit's design §15.36 and its ADR-0009 sentence** go stale at its
     next jsonparse pin move.
+
+### Slice 14: the run loop (2026-11-09)
+
+- **Landed:**
+  - **byte-machine 0.9.0** (decision 0059, PR #180 = `4268a84`; release
+    PR #181 = `fdd4da0`, tag `v0.9.0`; submitted to Akku on 2026-11-09). A
+    `dispatch` state that advances back to itself renders a loop beside
+    it, which reads the run with a fixnum step and a class test: none when
+    the class is every byte, one or two comparisons for one range, otherwise
+    a 256-entry table shared by every state with that class. The emitted text changes, and nothing else: no
+    IR, fingerprint, runtime, interpreter or verifier change, and the ABI
+    stays 9.
+  - **jsonparse on 0.9.0:** `vendor/byte-machine` at `v0.9.0`, the Makefile's
+    pin and tag, `Akku.manifest`'s `^0.9.0`, and `(generated jsonparse)`
+    regenerated: 14 loops, 2 tables, 102,006 bytes, fingerprint unchanged.
+    `Akku.lock` moves when the archive lists 0.9.0.
+  - **Records:** the upstream brief, ADR-0026, the global constraints, this
+    ledger, the plan's lever 2, and an `[Unreleased]` entry in
+    `CHANGELOG.md`.
+- **Evidence:**
+  - **Prototypes first** (the brief): hand-made variants of the generated
+    parser, timed against `main`, taking turns. Each passed twelve of
+    jsonparse's suites, but for P1d (five) and P1, whose change P1b carries.
+    They found that:
+    - the loop must start only after a byte in the class;
+    - it must dispatch the byte that ends it itself;
+    - the string body's class is faster through a table than by range
+      tests. For whitespace's, range tests (Vr) took less time on `citm`,
+      which isn't established (ADR-0026).
+  - **byte-machine:**
+    - `make test-all` 165/165, `check-test-partition`, and its mutation
+      suite at 81 passes / 752 mutations (711 at 0.8.0), each rerun by me
+      after every round of fixes;
+    - its Linux CI on #180 and #181;
+    - `make check-akku` at 0.9.0;
+    - every golden keeps its fingerprint.
+  - **Downstream, in scratch clones:** chez-httparse passes 101/101 and
+    uriparse 91/91 with regenerated parsers, fingerprints unchanged.
+    chez-httparse's throughput lane takes 0% to 2.6% less time, at its
+    resolution.
+  - **jsonparse:**
+    - `make test` runs 39 suites green, with `check-versions` held back
+      until the lock moves;
+    - seven pinned runs of the regenerated parser against `main`, in three
+      rotations, and two `make bench` runs (ADR-0026);
+    - two new cases in `test-parser-alloc`, each at two sizes: whitespace at
+      every gap a container has, and whitespace before a `values` stream's
+      first value. Nine mutant parsers, each consing in one whitespace loop,
+      were run against them. The first case fails for the seven container
+      loops, and the second for `stream-start`'s. `test-sequence-alloc`
+      fails for `top-done`'s.
+- **Review:**
+  - **Two adversarial reviews (Opus) of byte-machine's change.** The first
+    found:
+    - one defect: `render-machine` raised on a verified machine whose
+      fallback loops but can't be taken;
+    - four test gaps:
+      - the dispatch arm's per-byte read had lost its witness;
+      - a one-byte class had no census arm;
+      - an allocation at a feed's end was never measured;
+      - pauses and failures after a loop were never run;
+    - six false or weak claims, among them a −6.8% that its own turns didn't
+      support, and "faster" written for time saved.
+
+    The second found that every fix held, and three more record and test
+    claims to correct. All are fixed.
+  - **Recorded, not fixed:** in byte-machine's property-rejections pass, 8
+    pins also match their twin mutants, as on 0.8.0.
+  - **An adversarial review (Opus) of jsonparse's side** found:
+    - one defect: the rule that no other consumer has to regenerate is
+      false under Akku, which reads `^0.y.z` as `<0.(y+1).0`. So `^0.9.0`
+      and the siblings' `^0.8.0` can't share an application;
+    - seven gaps:
+      - the draft's CI runs nothing;
+      - M2's new order contradicted ADR-0004;
+      - three amended records lacked revision notes;
+      - no allocation test fed whitespace in a container;
+      - nothing checks byte-machine's lock hash;
+      - the M1 baseline retake wasn't on the Next list;
+      - the `tree` lane's spread was missing;
+    - nine false or loose claims, among them the escape spacing of
+      `escaped-string` and "long strings" for long runs of ASCII;
+    - nine nits.
+
+    All are fixed but one nit: a comment in `tests/check-akku.sh` states a
+    measurement of 0.8.0's archive, which still holds. The defect is
+    recorded, and the owner chose to keep `^0.9.0` (ADR-0026, Decision 5).
+- **Known:**
+  - **Neither M3 target moves:** `records-2k`'s `events` gap is 4.02× and
+    4.17×, and `escaped-string`'s 4.26× and 4.47×.
+  - **A change of up to 10% on one file can't be pinned on the loop:** a
+    variant that touched only whitespace loops read `ints-40k`, which has
+    none, 10% slower twice. `citm`, 71% whitespace, reads 0% to 7% slower,
+    which isn't established either way.
+  - **The lock waits for Akku,** up to a week from 2026-11-09, and the
+    slice's merge with it. Until then CI stops at `check-versions`, so the
+    regenerated parser has no arm64 run. Moving the lock is in ADR-0026's
+    Consequences.
+  - **A jsonparse release to Akku waits for the siblings** to admit
+    byte-machine 0.9 (ADR-0026, Decision 5).
 
 ### Slice 13: the callback path (2026-11-09)
 

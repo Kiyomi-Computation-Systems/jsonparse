@@ -30,8 +30,8 @@ SUBMAKE = $(MAKE)
 
 # --- the pins ----------------------------------------------------------------
 BYTE_MACHINE_DIR := vendor/byte-machine
-BYTE_MACHINE_PIN := c1f77911efb55030df0b2cd811903d74d2ba3d64
-BYTE_MACHINE_TAG := v0.8.0
+BYTE_MACHINE_PIN := fdd4da0b4d150fac80251b012120d760e4b5016a
+BYTE_MACHINE_TAG := v0.9.0
 SRFI_DIR := vendor/chez-srfi
 SRFI_PIN := 7879b527f267f067416552fb989135ad1b4ea436  # the pin chez-http-server uses
 

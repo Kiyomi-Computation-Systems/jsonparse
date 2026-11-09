@@ -36,12 +36,18 @@ record disagree, the record wins and this file gets fixed.
   compares the two byte for byte (ADR-0001). `make generate` is the only
   thing that writes it, `#!r6rs` line included.
 - **byte-machine:**
-  - `Akku.manifest` declares `^0.8.0`.
+  - `Akku.manifest` declares `^0.9.0` (ADR-0026).
   - `vendor/byte-machine` is a submodule pinned at a release tag, and the
     Akku floor equals it.
   - The gitlink, the floor and `Akku.lock` move together (ADR-0002).
 - **A change that needs a new byte-machine ABI** ships with the sibling
   consumers' regenerated parsers (ADR-0002).
+- **A byte-machine release that changes only the emitted text,** with the
+  ABI the same, is taken by moving the gitlink, tag, floor and lock together
+  and regenerating. Every other consumer keeps working without regenerating.
+  But Akku reads `^0.y.z` as `<0.(y+1).0`, so consumers share an application
+  only on one minor. A jsonparse release to Akku waits until the siblings
+  admit the same minor (ADR-0026).
 - **chez-srfi**, for SRFI-64 in tests only, is pinned at a commit, since
   upstream has no tags (ADR-0012).
 - **Only `src/`'s libraries reach a consumer's library path.** `.akkuignore`
