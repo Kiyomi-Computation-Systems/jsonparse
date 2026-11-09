@@ -191,8 +191,10 @@ newest first.
   - the fetch test needs curl, since wget reads no `file://`;
   - the report's date is UTC.
 - **Known:**
-  - **The owner runs `make bench` on the M1 laptop** (`brew install yajl
-    pkg-config`), unpinned. It adds numbers and decides nothing.
+  - **The owner ran `make bench` twice on the M1 laptop,** unpinned, and
+    ADR-0023 records the runs. They decide nothing. Their gaps are
+    smaller, because yajl runs slower there while jsonparse runs about as
+    fast as on the NUC, and `escaped-string` reads as met there.
   - **Next is slice 12, the other comparators.** The callback path follows,
     then the run node.
 

@@ -184,6 +184,31 @@ runs:
   `parse`, at 171 MB/s, is ADR-0004's 173 MB/s for the prototype with its
   callback stack.
 
+## On the M1 laptop
+
+**Conditions.** The owner ran `make bench` twice on the M1 laptop: Darwin
+25.6.0, Chez 10.4.1 and yajl 2.1.0 from Homebrew, the harness built by Apple
+clang 21 at `-O2`, unpinned. The reports' UTC date is 2026-11-09. These
+runs decide nothing (Decision 1). Every ratio below was computed by a script
+from the two reports and the NUC's.
+
+- **The runs agreed closely.** Across the 32 rates of the yajl table, a
+  rate moved by 0.2% at the median and 4.3% at most between them, and a gap
+  by 4.0% at most.
+- **The gaps are smaller.** `events` is 1.7× to 3.4× behind yajl, and
+  `parse` 1.5× to 7.3×. `records-2k` is 3.0× and 3.1× behind, against 2×.
+  `escaped-string` is 3.0× in both runs, under its 4×, so the report calls
+  it met there.
+- **That is yajl running slower, not jsonparse running faster.** Against the
+  NUC's medians:
+  - yajl's ran at 0.59 to 0.95 of them;
+  - jsonparse's `parse` and `events` at 0.85 to 1.04;
+  - its `tree`, `tree+walk` and `scan` at 0.87 to 1.13, in the second run.
+- **Why isn't measured.** An M1 performance core runs at up to 3.2 GHz,
+  against the NUC's 4.5, and Homebrew's flags for libyajl aren't known.
+- **The Mac's build works:** Homebrew's yajl, through pkg-config and the
+  prefix's `include/`, and Homebrew's Chez, named `chez`.
+
 ## Consequences
 
 - **M3's targets can be checked by anyone with `make bench`.** A report
@@ -194,6 +219,9 @@ runs:
 - **A gap within about 10% of its target needs several pinned runs** before
   it is called met or missed. A met target on `escaped-string` also needs
   the parts joined, as yajl does.
+- **A target met on the M1 says nothing about the NUC.** The machines put
+  yajl at different speeds: the M1's `events` gaps are 0.57 to 0.76 of the
+  NUC's on seven files, and 0.98 on `poet`.
 - **The levers, in the light of the profile:**
   - **The callback path** costs several times yajl's per value. The first
     step is to separate the machine's span delivery from jsonparse's
