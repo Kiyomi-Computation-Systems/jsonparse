@@ -461,6 +461,118 @@
        (let ((r (outcome (lambda () (read-json cp)))))
          (list r given))))
 
+;; A port whose bytes are still coming, as a request body read from the
+;; network. pieces-port gives one of PIECES a read, then calls THEN on every
+;; read after the last. `wait` raises `waiting`, which stands for the rest
+;; not having come; it is not a condition, so `outcome` never catches it.
+;; `end` gives the port's end.
+(define waiting (make-thing 'the-rest-has-not-come))
+(define (wait) (raise waiting))
+(define (end) 0)
+;; pieces-port : (Listof String) (-> Any) -> (Values Binary-Input-Port (-> Natural))
+;; The port, and a thunk counting its reads.
+(define (pieces-port pieces then)
+  (let ((left (map string->utf8 pieces)) (reads 0))
+    (values
+     (make-custom-binary-input-port
+      "pieces"
+      (lambda (bv start count)
+        (set! reads (+ reads 1))
+        (cond ((null? left) (then))
+              ((> (bytevector-length (car left)) count)
+               (error 'pieces-port "a piece longer than the read asks for" count))
+              (else
+               (let ((p (car left)))
+                 (bytevector-copy! p 0 bv start (bytevector-length p))
+                 (set! left (cdr left))
+                 (bytevector-length p)))))
+      #f #f #f)
+     (lambda () reads))))
+;; read-pieces : (Listof String) (-> Any) -> (List Any Natural)
+;; What read-json did, as `outcome` tags it, or (waited) if it read the
+;; port again after the last piece; and the port's reads.
+(define (read-pieces pieces then)
+  (let-values (((p reads) (pieces-port pieces then)))
+    (let ((r (guard (e ((eq? e waiting) '(waited)))
+               (outcome (lambda () (read-json p))))))
+      (list r (reads)))))
+
+;; A refusal waits for 16 KiB or the port's end: read-json reads the port
+;; again until one comes, even past a bad byte.
+(chk "still coming: a bad byte in the first piece waits"
+     (list '(waited) 2)
+     (read-pieces '("[x") wait))
+(chk "still coming: a bad byte in the second piece waits"
+     (list '(waited) 3)
+     (read-pieces '("[1," " x") wait))
+(chk "still coming: a bad byte, then the end"
+     (list (ascii-error 'port 'unexpected-byte 1) 2)
+     (read-pieces '("[x") end))
+(chk "still coming: a bad byte, then the rest of 16 KiB"
+     (list (ascii-error 'port 'unexpected-byte 1) 3)
+     (read-pieces (list "[x" (spaces 8191) (spaces 8191)) wait))
+(chk "still coming: a bad byte, then a byte short of 16 KiB"
+     (list '(waited) 4)
+     (read-pieces (list "[x" (spaces 8191) (spaces 8190)) wait))
+;; A document waits for the port's end too, whole or not.
+(chk "still coming: a whole document waits"
+     (list '(waited) 2)
+     (read-pieces '("[1]") wait))
+(chk "still coming: a whole document, then the end"
+     (list (returned (vector 1 2)) 3)
+     (read-pieces '("[1," "2]") end))
+
+;; What the port itself raises passes through read-json as it was raised,
+;; eq? to it: on the first read, later in the first 16 KiB, and once 16 KiB
+;; have been fed to the parser.
+;; port-raise : (Listof String) Any -> (List Boolean Natural)
+(define (port-raise pieces c)
+  (let-values (((p reads) (pieces-port pieces (lambda () (raise c)))))
+    (let ((got (guard (e (#t e)) (read-json p) 'no-raise)))
+      (list (eq? got c) (reads)))))
+(define (a-json-error) (guard (e (#t e)) (string->json "x")))
+(define fed-16k (list "[1," (spaces 16381)))
+(chk "port raises: its own condition, on the first read"
+     (list #t 1)
+     (port-raise '() (make-i/o-read-error)))
+(chk "port raises: its own condition, later in the first 16 KiB"
+     (list #t 2)
+     (port-raise '("[1,") (make-i/o-read-error)))
+(chk "port raises: its own condition, after 16 KiB were fed"
+     (list #t 3)
+     (port-raise fed-16k (make-i/o-read-error)))
+(chk "port raises: its own condition, after a whole document was fed"
+     (list #t 3)
+     (port-raise (list "[1]" (spaces 16381)) (make-i/o-read-error)))
+(chk "port raises: a &json-error, on the first read"
+     (list #t 1)
+     (port-raise '() (a-json-error)))
+(chk "port raises: a &json-error, later in the first 16 KiB"
+     (list #t 2)
+     (port-raise '("[1,") (a-json-error)))
+(chk "port raises: a &json-error, after 16 KiB were fed"
+     (list #t 3)
+     (port-raise fed-16k (a-json-error)))
+
+;; ... and as it was raised, non-continuable: a handler that returns is
+;; called with the port's raise alone, then the raise is a &non-continuable.
+;; port-raise-handled : (Listof String) -> (List Any Boolean Natural)
+(define (port-raise-handled pieces)
+  (let* ((c (make-i/o-read-error)) (seen '()))
+    (let-values (((p reads) (pieces-port pieces (lambda () (raise c)))))
+      (let ((r (guard (e ((non-continuable-violation? e) 'non-continuable)
+                         (#t 'other))
+                 (with-exception-handler
+                  (lambda (e) (set! seen (cons e seen)) 7)
+                  (lambda () (read-json p) 'no-raise)))))
+        (list r (and (= (length seen) 1) (eq? (car seen) c)) (reads))))))
+(chk "port raises: non-continuable, on the first read"
+     (list 'non-continuable #t 1)
+     (port-raise-handled '()))
+(chk "port raises: non-continuable, after 16 KiB were fed"
+     (list 'non-continuable #t 3)
+     (port-raise-handled fed-16k))
+
 ;; A multibyte character split across the chunk boundary at 16384.
 ;; Each row: the character, its bytes before the boundary.
 (for-each

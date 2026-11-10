@@ -6,6 +6,16 @@ uses [semantic versioning](https://semver.org/spec/v2.0.0.html): before 1.0,
 any release may change the API, and a new byte-machine runtime ABI means a
 new minor version.
 
+## [Unreleased]
+
+### Added
+
+- **`read-json`'s docs say what it does on a port whose bytes are still
+  coming,** such as a request body. It reads 16 KiB at a time, so bad
+  input is refused only once the 16 KiB that hold the error have come, or
+  the port has ended. What the port itself raises passes through as it was
+  raised. Tests hold both. Nothing else changes.
+
 ## [0.1.0] - 2026-11-08
 
 **The first release: a strict, resumable JSON parser for R6RS Scheme, with

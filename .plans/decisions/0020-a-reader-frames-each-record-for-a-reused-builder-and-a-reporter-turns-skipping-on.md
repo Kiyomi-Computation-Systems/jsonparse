@@ -1,6 +1,6 @@
 # ADR-0020: A reader frames each record for a reused builder, and a reporter turns skipping on
 
-- **Status:** Accepted
+- **Status:** Accepted, revised on 2026-11-10
 - **Date:** 2026-11-07
 - **Scope:** `(jsonparse sequence)`; the `stream` and `blank-lines`
   options; the grammar under the `mode` bit; the builder's EACH;
@@ -8,6 +8,17 @@
   procedures
 - **Related:** ADR-0005, ADR-0010, ADR-0011, ADR-0014, ADR-0015, ADR-0017,
   ADR-0018, ADR-0019; RFC 7464
+
+> **Revision (2026-11-10, issue 17).** Chez's `get-bytevector-some`
+> allocates a buffer of `(file-buffer-size)` bytes, 8 KiB on this Linux
+> host, on every call, however few bytes it returns.
+> So a port that gives small pieces, such as a network body trickling in,
+> costs far more than the 5% more allocation measured below on file and
+> bytevector ports. ADR-0019's issue 17 section measures it: in a loop
+> like `read-json`'s, at a byte a read, 5.5 times the time and 8.6 KB a
+> byte. `fold-json-sequence` over JSON Lines allocated 8,688 bytes per
+> input byte at a byte a read, and 584 at 16, against 51 from a bytevector
+> port.
 
 ## Context
 
@@ -213,6 +224,8 @@ read whole with one feed; each figure is the best of seven runs, in ms:
 - **`seq` is strict about what precedes the first RS:** a leading newline
   or byte order mark is a bad record, reported and skipped.
 - **Reading a port allocates its bytes once more,** in the bytevectors
-  `get-bytevector-some` returns.
+  `get-bytevector-some` returns, on ports that give 8 KiB a read. One that
+  gives less costs a buffer of `(file-buffer-size)` bytes a read (revised
+  2026-11-10).
 - **`write-json-sequence` walks each value three times:** once for its
   relabelled check, and twice in `put-json-record`.

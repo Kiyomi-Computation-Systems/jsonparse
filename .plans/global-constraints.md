@@ -167,6 +167,10 @@ record disagree, the record wins and this file gets fixed.
   reader each call (ADR-0020). Bad input raises `&json-error`, its reason the parser's code. Its offset
   counts the characters before the byte offset for a string, and bytes for
   a bytevector or a port (ADR-0010, ADR-0019).
+- **`read-json` reads 16 KiB at a time,** so on a port whose bytes are
+  still coming, a refusal waits for the 16 KiB that hold the error or the
+  port's end. What the port raises passes through it as it was raised
+  (ADR-0019).
 - **Writing is `put-json`'s.** A refusal is raised again with the easy
   procedure as its who. What a caller's port raises passes through as it
   was raised (ADR-0019).

@@ -7,9 +7,9 @@
 ;;;   (json-ref v "users" 0 "name")
 ;;;
 ;;; string->json, bytevector->json and read-json take one whole document,
-;;; from a string, a bytevector, or a binary input port read to its end.
-;;; Each returns what (jsonparse tree) builds, under the options given
-;;; last, (make-json-options) by default.
+;;; from a string, a bytevector, or a binary input port read to its end,
+;;; 16 KiB at a time. Each returns what (jsonparse tree) builds, under the
+;;; options given last, (make-json-options) by default.
 ;;; Bad input raises a &json-error:
 ;;;
 ;;;   reason   the parser's code, such as unexpected-byte or number-too-long
@@ -156,7 +156,9 @@
   ;; The value of the JSON document PORT holds, read to its end, 16 KiB at
   ;; a time. Raises a &json-error whose offset counts bytes from where PORT
   ;; was if it holds no document, and reads no further than the end of the
-  ;; 16 KiB that hold the error.
+  ;; 16 KiB that hold the error. So on a port whose bytes are still coming,
+  ;; a refusal waits for those 16 KiB or PORT's end. What PORT raises
+  ;; passes through as it was raised: nothing here guards the reads.
   (define read-json
     (case-lambda
       ((port) (read-json port default-options))

@@ -87,9 +87,10 @@ Reads one whole JSON document from UTF-8 bytes. Bad input raises a
 
 `read-json : Binary-Input-Port [json-options] -> Any`
 
-Reads one whole JSON document from a binary port, to the port's end. Bad
-input raises a `&json-error` whose offset counts bytes from where the port
-was.
+Reads one whole JSON document from a binary port, 16 KiB at a time, to the
+port's end. Bad input raises a `&json-error` whose offset counts bytes from
+where the port was. It is raised once the 16 KiB that hold the error have
+come, or the port has ended. What the port itself raises passes through.
 
 **Available from:** `(jsonparse easy)`\
 **Details:** [Reading](easy.md#reading)
