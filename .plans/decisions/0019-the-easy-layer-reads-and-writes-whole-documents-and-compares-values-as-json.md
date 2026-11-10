@@ -1,6 +1,6 @@
 # ADR-0019: The easy layer reads and writes whole documents, and compares values as JSON
 
-- **Status:** Accepted, revised on 2026-11-08
+- **Status:** Accepted, revised on 2026-11-08 and 2026-11-10
 - **Date:** 2026-11-07
 - **Scope:** `(jsonparse easy)`: its procedures, errors and offsets;
   `check-json` in `(jsonparse writer)`
@@ -13,6 +13,15 @@
 > `write-json-sequence` and `json-sequence->bytevector` write them. What
 > this record says of reading one whole document holds for `string->json`,
 > `bytevector->json` and `read-json`, which now refuse `stream values`.
+
+> **Revision (2026-11-10, issue 17).** `read-json` keeps its 16 KiB
+> buffer, and its docs now say what that means on a port whose bytes are
+> still coming. They also say that what the port raises passes through
+> `read-json` as it was raised, as decision 3 says of `write-json`. Rows
+> in `tests/test-easy.sps` hold both. The owner chose this over reading
+> what is ready, with R6RS's `get-bytevector-some` or Chez's
+> `get-bytevector-some!`. [Issue 17](#issue-17-a-port-whose-bytes-are-still-coming)
+> below has the measurement.
 
 ## Context
 
@@ -69,6 +78,9 @@ each figure the best of seven runs, in ms:
    - `(read-json port [options])` reads a binary input port to its end,
      16 KiB at a time. It stops reading at the first error, so the port
      has been read to the end of the 16 KiB that hold it.
+     - So on a port whose bytes are still coming, a refusal waits for
+       those 16 KiB or the port's end. What the port raises passes
+       through as it was raised (revised 2026-11-10, issue 17).
 2. **Bad input raises `&json-error`:**
    - its reason is the parser's code, such as `unexpected-byte` or
      `number-too-long`;
@@ -235,3 +247,79 @@ each figure the best of seven runs, in ms:
 - **A `json-number`'s exponent costs `json=?` time linear in its digits.**
   An exponent of 200,000 digits took 6 s through `string->number`; added
   to as text, it takes 1 ms.
+
+## Issue 17: a port whose bytes are still coming
+
+Found by circuit, whose `wrap-json-body` reads a request body with
+`read-json` on the request's coroutine.
+
+**Decision 1's buffer waits.** `get-bytevector-n!` waits for 16 KiB or
+the port's end before the parser sees a byte.
+- So a body whose first byte is bad is refused only once 16 KiB, or the
+  whole body, have come.
+- In circuit, a client that sends a bad byte and then stalls gets no 400.
+  Under `wrap-timeout` it gets the 504; without it, the request waits
+  until the 16 KiB come or the client goes.
+- A document that parses isn't delayed: it is read to its end anyway.
+
+**Reading what is ready was measured** on 2026-11-10, on this NUC:
+- Chez 10.4.1 (ta6le), pinned to CPU 7, whose governor is `powersave`
+  and whose top frequency is 4.5 GHz;
+- `records-2k.json` (320,189 bytes), through a port that gives K bytes a
+  read;
+- the median of five samples, each of ten passes.
+
+| K | Today: ms/MB | Today: bytes allocated a byte | `get-bytevector-some`: ms/MB | allocated | `get-bytevector-some!`: ms/MB | allocated |
+|--:|--:|--:|--:|--:|--:|--:|
+| 1 | 33 | 25 | 179 | 8,650 | 107 | 441 |
+| 16 | 15 | 10 | 31 | 549 | 23 | 36 |
+| 100 | 14 | 9.2 | 18 | 95 | 16 | 13 |
+| 1,400 | 14 | 9.1 | 14 | 15 | 14 | 9.4 |
+| 8,192 | 14 | 9.1 | 14 | 10 | 14 | 9.1 |
+
+- **`get-bytevector-some` reads what is ready,** as the stream readers do
+  (ADR-0020).
+  - It was also timed on file and bytevector ports, which give 8,192 bytes
+    a read. That was on all eight bench files, nine rounds of at least
+    20 MB each after a warm-up round, the median. Over two runs it took 2%
+    less to 5% more time than today. In the second run it allocated 1.00
+    to 1.04 bytes more per input byte. The first run's allocation figures
+    read the live heap, not the bytes allocated, and are discarded.
+  - But Chez allocates a buffer of `(file-buffer-size)` bytes, 8,192 here,
+    on every call, however few bytes it returns: 8,209 bytes a call on a
+    port giving a byte a read. So small pieces cost up to 5.5 times the
+    time, and 8.6 KB a byte.
+- **Chez's `get-bytevector-some!`** fills the 16 KiB buffer with what is
+  ready, without that allocation: 0.002 bytes a call. It isn't R6RS, which
+  ADR-0003 keeps `src/` to.
+  - What its column pays on small pieces is the builder's: a 1-byte
+    `json-builder-feed!` allocates 416 bytes. Any loop that reads what is
+    ready pays that once a piece.
+- **The stream readers already read with `get-bytevector-some`,** so small
+  pieces cost them the same 8 KiB a read. `fold-json-sequence` over
+  2,000 JSON Lines records allocated 8,688 bytes per input byte at a byte
+  a read, and 584 at 16, against 51 from a bytevector port.
+- **The owner chose on 2026-11-10 to keep `get-bytevector-n!`,** and to
+  say so in `read-json`'s reference entry and in `easy.md`'s Reading.
+  - The rows are in `tests/test-easy.sps`. They use a port that gives one
+    piece a read, then raises a value of its own.
+  - A refusal waits: `[x`, then nothing, reads the port a second time.
+    `[x` and the rest of 16 KiB is refused without a further read.
+  - What the port raises passes through `eq?` to itself, and
+    non-continuable: its own condition, or a `&json-error`. That holds on
+    the first read, later in the first 16 KiB, and once 16 KiB have been
+    fed to the parser.
+  - Mutants of `read-json` were watched fail them:
+    - `get-bytevector-some`, and `get-bytevector-some!`;
+    - a chunk of 8,192, 16,383 or 16,385 bytes;
+    - taking a short read as the port's end, unfed;
+    - reading what is ready, and taking a short piece as the end;
+    - a guard that copies a port's `&json-error`, field for field;
+    - one that turns a port's condition into a `&json-error`, at any
+      time or only once bytes have been fed;
+    - one that turns any raise into a `&json-error`;
+    - one that returns a whole document when the port then fails;
+    - one that raises the port's raise again, continuable.
+
+    A guard that raises the same object again, non-continuable, passes
+    every row. Nothing promised can tell it from today's code.

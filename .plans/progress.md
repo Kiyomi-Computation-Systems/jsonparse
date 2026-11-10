@@ -60,6 +60,11 @@ newest first.
   13 ns, byte-machine's delivery is 4 to 7, the counting 1 to 3.4, and
   jsonparse's binding about 1 to 3, after a cut that made `events` up to
   4.5% faster. The rest of the cut is byte-machine's.
+- **Issue 17, `read-json` on a port whose bytes are still coming, is
+  documented** (close-out below). circuit found that a refusal waits for
+  16 KiB or the port's end, and that nothing promised a port's raise
+  passes through. The owner chose to keep the 16 KiB read and say so
+  (ADR-0019's revision).
 
 ## Next
 
@@ -126,6 +131,77 @@ newest first.
 **Then:** M4, YAJL's options; and the rest of M5.
 
 ## Close-outs
+
+### Issue 17: `read-json` on a port whose bytes are still coming (2026-11-10)
+
+- **The issue:** circuit's `wrap-json-body` reads a request body with
+  `read-json`, and found two things.
+  - A refusal waits for 16 KiB or the port's end, so a client that sends
+    a bad byte and stalls gets no 400.
+  - Nothing promised that a port's raise passes through `read-json`, though
+    circuit's 413 relies on it.
+- **The choice:** the owner's, on 2026-11-10.
+  - I first offered `get-bytevector-some`, on figures from file and
+    bytevector ports, and the owner took it.
+  - A measurement on small pieces then showed Chez allocates an 8 KiB
+    buffer a call. At a byte a read that is 5.5 times the time. Told, the
+    owner chose to keep the 16 KiB read and document it (ADR-0019's
+    revision).
+  - Circuit's records (`d769bd6`) say the owner declined #17. The owner
+    said that meant the changes that would add overhead to jsonparse, not
+    these docs and rows.
+- **Landed:**
+  - **Docs:** `read-json`'s reference entry and `easy.md`'s Reading say a
+    refusal waits for the 16 KiB that hold the error, or the port's end.
+    They also say what the port raises passes through. The comments in
+    `easy.sls` say the same.
+  - **Tests:** 16 rows in `tests/test-easy.sps`, through a port that gives
+    one piece a read and then raises a value of its own:
+    - 7 on the wait;
+    - 7 on the pass-through, on the first read, later in the first
+      16 KiB, and after 16 KiB were fed;
+    - 2 on its continuability.
+  - **Records:**
+    - ADR-0019's revision, its decision 1, and its issue 17 section with
+      the measurement;
+    - ADR-0020's revision, since its stream readers already pay the
+      8 KiB a read;
+    - the global constraints and CHANGELOG.
+- **Evidence:**
+  - `scripts/guix-env make test` runs 39 suites; `test-easy` passes
+    1,476. `make check-site` is green.
+  - **Every new row was watched fail,** under the 13 mutants of
+    `read-json` ADR-0019 lists, each run on the final rows. One more, a
+    guard that raises the same object again non-continuable, passes every
+    row, and nothing promised tells it from today's code.
+- **Review:** an adversarial review (Opus) found:
+  - **two gaps:**
+    - no pass-through row raised after the parser had been fed, so
+      mutants that relabelled or swallowed a late raise passed. That
+      late raise is circuit's 413;
+    - nothing held a pass-through's continuability;
+  - **seven false or unsupported claims:**
+    - this ledger's "close-out below", with none written;
+    - circuit's records contradicting the change;
+    - "8 KiB", which is `(file-buffer-size)`;
+    - figures without their run or method;
+    - the 504 without `wrap-timeout`;
+    - the `get-bytevector-some!` column unexplained;
+    - ADR-0020's allocation consequence, stale on small pieces;
+  - **two doc wordings** a reader could misread;
+  - **five nits.**
+
+  All are fixed but circuit's records, which the owner keeps.
+- **Known:**
+  - **A stalled client still gets circuit's 504,** not a 400.
+  - **The stream readers pay 8 KiB a read on small pieces.** That is
+    measured for `fold-json-sequence`, and not changed.
+  - **Reading what is ready without that cost needs `get-bytevector-some!`,**
+    which is Chez's, so it needs ADR-0003 amended.
+  - **`read-json-sequence`'s reference entry says nothing of a port's
+    raise,** though rows hold it.
+  - **Circuit's design §15.36 and its ADR-0009 sentence** go stale at its
+    next jsonparse pin move.
 
 ### Slice 13: the callback path (2026-11-09)
 

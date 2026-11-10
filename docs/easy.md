@@ -27,8 +27,12 @@ v                               ; => (("users" . #((("name" . "Ada") ("age" . 36
 (read-json port)                              ; from a binary input port
 ```
 
-- **One document each,** with nothing after it but whitespace.
-  `read-json` reads the port to its end.
+- **One document each,** with nothing after it but whitespace. On
+  success, `read-json` has read the port to its end.
+- **`read-json` reads 16 KiB at a time,** and parses each block once it is
+  full or the port has ended. So on a port whose bytes are still coming,
+  such as a request body, bad input is refused only then. What the port
+  itself raises, such as an I/O error, passes through as it was raised.
 - **The value** is what [tree.md](tree.md)'s builder gives: objects as
   alists, arrays as vectors, `null` as the symbol `null`.
 - **Bad input raises a `&json-error`:**
