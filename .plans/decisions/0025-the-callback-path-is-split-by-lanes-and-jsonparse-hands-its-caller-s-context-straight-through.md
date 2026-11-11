@@ -1,11 +1,16 @@
 # ADR-0025: The callback path is split by lanes, and jsonparse hands its caller's context straight through
 
-- **Status:** Accepted
+- **Status:** Accepted, revised the same day
 - **Date:** 2026-11-09
 - **Scope:** `make bench-callbacks` and `(jsonparse-bench callbacks)`; how
   `(jsonparse parser)` binds byte-machine's callbacks; what the callback
   path costs, and whose cost it is
 - **Related:** ADR-0002, ADR-0004, ADR-0010, ADR-0015, ADR-0023
+
+> **Revision (2026-11-09, slice 14).** The run node needed no ABI bump: it
+> shipped in byte-machine 0.9.0 at ABI 9 (ADR-0026). byte-machine's callback
+> step and span delivery need ABI 10, so they get an ABI bump of their own,
+> with M2 if it is taken (ADR-0004), not the run node's.
 
 ## Context
 

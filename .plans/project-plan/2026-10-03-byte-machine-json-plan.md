@@ -356,9 +356,14 @@ them:
    dispatch whose matching case returns to itself. It also helps HTTP header
    values. This needs a decision record, because it is a new node kind and an
    ABI bump.
+   **Built 2026-11-09 without either (ADR-0026):** byte-machine 0.9.0
+   renders a loop beside each state that advances back to itself. That is a
+   property of an existing node kind, and the loop uses no new runtime name,
+   so the ABI stays 9.
 3. **Unsafe bytevector access in emitted code.** The plan's decision 10 admits
    Chez-specific emission "only when reproducible compiled benchmarks demonstrate
-   a material need". The run node gives a contained place to test that.
+   a material need". The run node gives a contained place to test that; it
+   shipped as byte-machine 0.9.0's run loop (ADR-0026).
    **This lever is closed to jsonparse while ADR-0003 stands:** the generated
    parser must stay `(rnrs)`-only.
 4. **Number fast path.** `integer-accumulate` into a `uint 64` in parallel with

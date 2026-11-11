@@ -76,6 +76,14 @@
 (define (long-number n) (bytes (rep "1" n)))
 (define (nested-arrays n) (bytes (string-append (rep "[" n) (rep "]" n))))
 (define (nested-objects n) (bytes (string-append (rep "{\"a\":" n) "0" (rep "}" n))))
+;; Whitespace at every gap a container has: after `[` and `{`, before and
+;; after `:` and `,`, and before `]` and `}`. Each gap is a run of spaces,
+;; newlines, tabs and returns, so each whitespace state's loop reads a run.
+(define ws " \n\t\r  ")
+(define (spaced-records n)
+  (let ((rec (string-append "{" ws "\"k\"" ws ":" ws "1" ws "," ws "\"j\"" ws ":" ws
+                            "[" ws "2" ws "," ws "3" ws "]" ws "}")))
+    (bytes (string-append "[" ws (rep (string-append rec ws "," ws) n) "1" ws "]" ws))))
 
 ;; --- handlers ------------------------------------------------------------------------
 
@@ -134,6 +142,7 @@
   (list (list "per value: records" (records 10) (records 10000) 512)
         (list "per byte: a string" (long-string 100) (long-string 1000000) 512)
         (list "per byte: a number" (long-number 100) (long-number 1000000) 512)
+        (list "per byte: whitespace in containers" (spaced-records 10) (spaced-records 20000) 512)
         (list "per container: nested arrays" (nested-arrays 100) (nested-arrays 60000) 65535)
         (list "per container: nested objects" (nested-objects 100) (nested-objects 30000) 65535)))
 
@@ -159,6 +168,39 @@
      '(need-input finished)
      (cadr (measure no-ops (caddr kase) (cadddr kase)))))
  cases)
+
+;; Under `stream values`, whitespace before the first value has a state, and
+;; a loop, of its own.
+(define (allocated-values handler bv)
+  (let ((p (make-json-parser handler #f (make-json-options 'stream 'values))))
+    (parameterize ((collect-request-handler void))
+      (let* ((before (sstats-bytes (statistics)))
+             (fed (json-parser-feed! p bv))
+             (done (json-parser-finish! p))
+             (after (sstats-bytes (statistics))))
+        (list (- after before)
+              (list (json-result-status fed) (json-result-status done)))))))
+
+(define (leading-whitespace n) (bytes (string-append (rep ws n) "1 ")))
+
+(for-each
+ (lambda (handler-label handler)
+   (test-equal (string-append "per byte: whitespace before a stream's first value, " handler-label
+                              ": the large input allocates what the small one does")
+     '(0 0 0)
+     (let loop ((k 0) (acc '()))
+       (if (= k 3)
+           (reverse acc)
+           (let* ((s (car (allocated-values handler (leading-whitespace 10))))
+                  (l (car (allocated-values handler (leading-whitespace 100000))))
+                  (d (- l s)))
+             (loop (+ k 1) (cons (if (<= (abs d) slope-noise) 0 d) acc)))))))
+ '("all no-ops" "nothing bound")
+ (list no-ops nothing))
+
+(test-equal "per byte: whitespace before a stream's first value: the large input finishes"
+  '(need-input finished)
+  (cadr (allocated-values no-ops (leading-whitespace 100000))))
 
 ;; baseline : Bytevector Nat -> Nat
 ;; Bytes byte-machine's own parser allocates for a feed and a finish of BV,

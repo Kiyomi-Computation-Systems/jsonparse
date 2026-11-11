@@ -1,5 +1,5 @@
 #!r6rs
-;;; (jsonparse-grammar) -- the JSON (RFC 8259) machine, for byte-machine 0.8.
+;;; (jsonparse-grammar) -- the JSON (RFC 8259) machine, for byte-machine 0.9.
 ;;;
 ;;; Tooling, not library code: it imports byte-machine's graph and compiler,
 ;;; so it lives in grammar/, outside src/, and never reaches the Akku package

@@ -1,9 +1,19 @@
 # ADR-0002: byte-machine is a runtime dependency, through Akku
 
-- **Status:** Accepted
+- **Status:** Accepted, revised on 2026-11-09
 - **Date:** 2026-10-30
 - **Scope:** how jsonparse gets byte-machine, at run time and in its own tests
 - **Related:** ADR-0001; chez-httparse's `Akku.manifest` and `vendor/byte-machine`
+
+> **Revision (2026-11-09, slice 14).** ADR-0026 moves jsonparse to
+> byte-machine 0.9.0: the floor is `^0.9.0`, and the lock follows once the
+> Akku archive lists it. 0.9.0 changes only the emitted text, and its ABI is
+> still 9. Akku reads `^0.y.z` as `>=0.y.z <0.(y+1).0`, so `^0.9.0` shares no
+> version with the siblings' `^0.8.0`. An application can install
+> byte-machine consumers together only once every one admits the same minor.
+> So a jsonparse release against `^0.9.0` waits until chez-httparse, uriparse
+> and chez-http-server admit 0.9, though none of them has to regenerate to
+> keep working on its own.
 
 ## Context
 

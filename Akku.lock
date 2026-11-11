@@ -4,9 +4,9 @@
 (projects
  ((name "byte-machine")
   (location
-   (url "https://archive.akkuscm.org/archive/pkg/b/byte-machine_0.8.0_repack.tar.xz"))
+   (url "https://archive.akkuscm.org/archive/pkg/b/byte-machine_0.9.0_repack.tar.xz"))
   (content
-   (sha256 "8f90aa8279faa888dc86a4887a2e566689add93de404cd6e2431dd1feaae4fe3")))
+   (sha256 "eda6417cc0e55460af626322d5d3950ce0ead3e6f284d62258971b4617e27173")))
  ((name "chez-cmark-gfm")
   (location
    (url "https://archive.akkuscm.org/archive/pkg/c/chez-cmark-gfm_2.0.0_repack.tar.xz"))

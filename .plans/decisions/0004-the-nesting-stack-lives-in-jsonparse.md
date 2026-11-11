@@ -1,9 +1,16 @@
 # ADR-0004: The nesting stack lives in jsonparse
 
-- **Status:** Accepted
+- **Status:** Accepted, revised on 2026-11-09
 - **Date:** 2026-10-30
 - **Scope:** where the parser keeps track of open objects and arrays; plan M1 and M2
 - **Related:** plan §4.3 and M2; ADR-0002; ADR-0005
+
+> **Revision (2026-11-09, slice 14).** M3's run node shipped in byte-machine
+> 0.9.0 with no ABI bump (ADR-0026), so there is no run-node release for M2
+> to share. The owner chose on 2026-11-09 to decide M2 before byte-machine's
+> callback step is inlined, which needs ABI 10. If M2 is taken, it ships with
+> that change, so the consumers still regenerate once for the bump. M2's
+> decision now comes before M3 is done, not after.
 
 ## Context
 
