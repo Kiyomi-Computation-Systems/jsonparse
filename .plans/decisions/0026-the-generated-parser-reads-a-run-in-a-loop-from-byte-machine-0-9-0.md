@@ -1,7 +1,7 @@
 # ADR-0026: The generated parser reads a run in a loop, from byte-machine 0.9.0
 
-- **Status:** Accepted. `Akku.lock` moves when the Akku archive lists
-  byte-machine 0.9.0.
+- **Status:** Accepted. The Akku archive listed byte-machine 0.9.0 on
+  2026-11-10, and `Akku.lock` moved on 2026-11-11.
 - **Date:** 2026-11-09
 - **Scope:** jsonparse's byte-machine pin, floor and lock;
   `(generated jsonparse)`; plan M3's lever 2
@@ -159,15 +159,21 @@ Neither target is met. ADR-0025 had 4.00× and 3.95×, and 4.65× and 4.30×.
   - a byte-machine variant whose small classes test ranges, measured over
     more turns;
   - or a way to measure how much of a move is code layout's.
-- **The lock waits for Akku,** and with it this slice's merge.
-  - **CI meanwhile runs nothing:** `make test` needs `check-versions`, so
-    the draft's jobs stop before any suite, on amd64 and arm64.
-    byte-machine's own CI is amd64 only, so the regenerated parser has no
-    arm64 run until the lock moves.
+- **The lock waited for Akku,** and with it this slice's merge.
+  - **CI meanwhile ran nothing:** `make test` needs `check-versions`, so
+    the draft's jobs stopped before any suite, on amd64 and arm64.
+    byte-machine's own CI is amd64 only, so the regenerated parser had no
+    Linux arm64 run until the lock moved.
   - **Moving the lock:** `scripts/akku lock` writes it. Keep only
     byte-machine's entry's change, since the run may move chez-cmark-gfm's
     too. Then check by hand the archive file's sha256 against the lock:
     `check-versions` reads only the URL's version.
+  - **It moved on 2026-11-11:**
+    - the archive file's sha256 is the index's and the lock's;
+    - its 215 files are `git archive v0.9.0`'s, byte for byte;
+    - Akku 1.2.0's `lock` also reformatted the file and swapped its two
+      entries. chez-cmark-gfm's entry was the same, so the commit changes
+      only byte-machine's URL and sha256.
 - **A jsonparse release to Akku waits for the siblings,** which must admit
   byte-machine 0.9 first (Decision 5).
 - **M3's other exit criterion, byte-machine's own baseline, is met.** The

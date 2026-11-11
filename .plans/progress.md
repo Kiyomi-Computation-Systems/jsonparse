@@ -60,11 +60,11 @@ newest first.
   13 ns, byte-machine's delivery is 4 to 7, the counting 1 to 3.4, and
   jsonparse's binding about 1 to 3, after a cut that made `events` up to
   4.5% faster. The rest of the cut is byte-machine's.
-- **Slice 14, the run loop, waits for Akku to list byte-machine 0.9.0**
-  (close-out below). byte-machine 0.9.0 compiles a state's loop back to
-  itself into a tight loop, at the same ABI, and jsonparse regenerates on it.
-  `gsoc-2018` takes about 40% less time, and neither M3 target moves
-  (ADR-0026). The PR is a draft until its `Akku.lock` can move.
+- **Slice 14, the run loop, is done** (close-out below). byte-machine
+  0.9.0 compiles a state's loop back to itself into a tight loop, at the
+  same ABI, and jsonparse regenerates on it. `gsoc-2018` takes about 40%
+  less time, and neither M3 target moves (ADR-0026). Its `Akku.lock` moved
+  on 2026-11-11, once the Akku archive listed 0.9.0.
 - **Issue 17, `read-json` on a port whose bytes are still coming, is
   documented** (close-out below). circuit found that a refusal waits for
   16 KiB or the port's end, and that nothing promised a port's raise
@@ -126,7 +126,7 @@ newest first.
     splits it, and jsonparse hands the caller's context straight through.
     byte-machine's delivery, 4 to 7 ns a value, is the larger part left
     (ADR-0025).
-14. **The run loop** (done but for its lock, close-out below): plan M3's
+14. **The run loop** (done, close-out below): plan M3's
     lever 2, built in byte-machine 0.9.0 as a loop for a state that
     advances back to itself, with no new node kind and no ABI bump. jsonparse
     regenerates on it (ADR-0026). The owner retook byte-machine's own
@@ -220,7 +220,8 @@ newest first.
 
 - **Landed:**
   - **byte-machine 0.9.0** (decision 0059, PR #180 = `4268a84`; release
-    PR #181 = `fdd4da0`, tag `v0.9.0`; submitted to Akku on 2026-11-09). A
+    PR #181 = `fdd4da0`, tag `v0.9.0`; submitted to Akku on 2026-11-09,
+    listed on 2026-11-10). A
     `dispatch` state that advances back to itself renders a loop beside
     it, which reads the run with a fixnum step and a class test: none when
     the class is every byte, one or two comparisons for one range, otherwise
@@ -230,7 +231,8 @@ newest first.
   - **jsonparse on 0.9.0:** `vendor/byte-machine` at `v0.9.0`, the Makefile's
     pin and tag, `Akku.manifest`'s `^0.9.0`, and `(generated jsonparse)`
     regenerated: 14 loops, 2 tables, 102,006 bytes, fingerprint unchanged.
-    `Akku.lock` moves when the archive lists 0.9.0.
+    `Akku.lock` moved to 0.9.0 on 2026-11-11: byte-machine's entry only,
+    its sha256 checked against the archive's file (ADR-0026).
   - **Records:** the upstream brief, ADR-0026, the global constraints, this
     ledger, the plan's lever 2, and an `[Unreleased]` entry in
     `CHANGELOG.md`.
@@ -261,10 +263,13 @@ newest first.
     chez-httparse's throughput lane takes 0% to 2.6% less time, at its
     resolution.
   - **jsonparse:**
-    - `make test` runs 39 suites green, with `check-versions` held back
-      until the lock moves. The owner ran the same on the M1 laptop
+    - `make test` ran 39 suites green, with `check-versions` held back
+      until the lock moved. The owner ran the same on the M1 laptop
       (`tarm64osx`, Chez 10.4.1) on 2026-11-09: 39 suites green, and
       `make check-pins` holds;
+    - with the lock moved, `make test` runs 39 suites green,
+      `check-versions` included, and `make check-akku` installs the
+      package and runs its consumer;
     - seven pinned runs of the regenerated parser against `main`, in three
       rotations, and two `make bench` runs (ADR-0026);
     - two new cases in `test-parser-alloc`, each at two sizes: whitespace at
@@ -316,10 +321,6 @@ newest first.
     variant that touched only whitespace loops read `ints-40k`, which has
     none, 10% slower twice. `citm`, 71% whitespace, reads 0% to 7% slower,
     which isn't established either way.
-  - **The lock waits for Akku,** up to a week from 2026-11-09, and the
-    slice's merge with it. Until then CI stops at `check-versions`, so the
-    regenerated parser has no arm64 run. Moving the lock is in ADR-0026's
-    Consequences.
   - **A jsonparse release to Akku waits for the siblings** to admit
     byte-machine 0.9 (ADR-0026, Decision 5).
 
