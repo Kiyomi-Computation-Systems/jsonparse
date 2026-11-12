@@ -1,11 +1,11 @@
 #!r6rs
 ;;; tests/test-string-alloc.sps: what (jsonparse string) allocates (ADR-0010,
-;;; ADR-0016).
+;;; ADR-0016, ADR-0027).
 ;;;
 ;;; Chez's sstats-bytes counts every byte allocated since the start, so a
 ;;; difference across a region is what it allocated, whatever the collector
 ;;; did meanwhile (tests/test-parser-alloc.sps says why bytes-allocated will
-;;; not do). Four properties, each held to a relation, never to a byte count:
+;;; not do). Six properties, each held to a relation, never to a byte count:
 ;;;
 ;;;   1. No slope across strings: after warm-up, the same string allocates
 ;;;      the same as the 1st string and as the 20,000th.
@@ -25,6 +25,12 @@
 ;;;      2,000-digit one does, under the default limit of 1,000, and ends in
 ;;;      a stop. A control: in text mode, which keeps every byte, it
 ;;;      allocates at least its length.
+;;;   6. Which path a number takes (ADR-0027): a short integer allocates
+;;;      nothing in flonum and exact modes, and a decimal of up to 15
+;;;      digits one flonum, so neither copies its text; one of 16 to 18
+;;;      digits less than that copy. One past each bound, exact mode's
+;;;      decimals and text mode allocate at least the copy: a bytevector of
+;;;      the text and a string of it.
 ;;;
 ;;; Measured on 2026-10-30 with the Guix container's Chez 10.4.1 (the
 ;;; figures are not pinned: another Chez build may allocate differently),
@@ -320,6 +326,119 @@
   (show "retained: " growth " bytes after 10,000 strings of 1,000 bytes")
   (test-equal "retention: memory in use after a full collection grows by under 1 MB over 10,000 strings"
     #t (< growth 1000000)))
+
+;; --- 6. which path a number takes ---------------------------------------------------
+
+;; ADR-0027: json-assembler-number! reads a short number straight from its
+;; buffer, so what a number allocates tells which path took it. Each text
+;; goes to a warm assembler in one part and is taken, as in a parse.
+
+;; A flonum, made in a region as a fast decimal's result is.
+(define flonum-parts (vector 1.5 2.5))
+
+(define empty-cost (allocated (lambda () (vector-set! sink 0 #f))))
+
+(define flonum-cost
+  (allocated (lambda () (vector-set! sink 0 (fl* (vector-ref flonum-parts 0) (vector-ref flonum-parts 1))))))
+
+;; number-cost-on : json-assembler String -> Nat
+;; Bytes allocated by giving A the number TEXT in one part and taking it,
+;; after three turns of the same to warm it.
+(define (number-cost-on a text)
+  (let ((bv (string->utf8 text)))
+    (define (turn)
+      (json-assembler-number-chars! a bv 0 (bytevector-length bv))
+      (vector-set! sink 0 (json-assembler-number! a)))
+    (turn) (turn) (turn)
+    (allocated turn)))
+
+;; number-cost : Mode String -> Nat
+;; number-cost-on a new assembler under MODE.
+(define (number-cost mode text)
+  (number-cost-on (make-json-assembler (make-json-options 'number-mode mode)) text))
+
+;; costs : Mode (Listof String) -> (Listof (List String Nat Nat))
+;; Each text, its number-cost, and the copy baseline for its length: a
+;; bytevector and a string, what the general path makes first.
+(define (costs mode texts)
+  (let ((cs (map (lambda (t) (list t (number-cost mode t) (baseline (string-length t)))) texts)))
+    (show mode ": text, cost, copy: " cs)
+    cs))
+
+;; costs-failing : Mode (Listof String) (Nat Nat -> Boolean) -> (Listof (List String Nat Nat))
+;; The costs whose cost and copy fail OK?: none, when every text keeps it.
+(define (costs-failing mode texts ok?)
+  (filter (lambda (x) (not (ok? (cadr x) (caddr x)))) (costs mode texts)))
+
+(define fast-integers
+  '("0" "-0" "7" "-7" "123456789" "-123456789" "123456789012345678" "-123456789012345678"))
+
+;; Measured on 2026-11-11 with the Guix container's Chez 10.4.1 on the
+;; NUC (amd64), in bytes, each region with its 160-byte record of
+;; (statistics). An empty region 160, one flonum 176. With the fast path:
+;;   - the integers below: 160 in both modes, either sign;
+;;   - the decimals of up to 15 digits 176, either sign;
+;;   - those of 16 to 18 digits 208 to 240, against copies of 288;
+;;   - the general path: 19 digits 288 in flonum mode, the copy alone, and
+;;     384 in exact mode; 15 and 16 digits at 10^23 and 10^-23 464 to 592,
+;;     against copies of 272 to 288; exact mode's decimals 288 to 480, and
+;;     text mode 208 to 256, against copies of 192 to 272.
+;; Before it, on the same day, every number took the general path: the
+;; integers 192 to 288 in flonum mode and 224 to 384 in exact mode, the
+;; decimals of up to 15 digits 304 to 560, and those of 16 to 18 digits
+;; 400 to 560.
+(test-equal "fast path: 0, and an integer of 1, 9 and 18 digits, either sign, in flonum and exact modes, allocates nothing: what an empty region does"
+  (map (lambda (t) (list t empty-cost empty-cost)) fast-integers)
+  (let ((cs (map (lambda (t) (list t (number-cost 'flonum t) (number-cost 'exact t))) fast-integers)))
+    (show "integers: text, flonum, exact: " cs)
+    cs))
+
+(test-equal "fast path: an assembler made with no options takes it too: 123456789 allocates nothing"
+  empty-cost
+  (number-cost-on (make-json-assembler) "123456789"))
+
+(show "empty region " empty-cost ", one flonum " flonum-cost)
+
+(test-equal "fast path: the measure sees one flonum: it costs more than an empty region"
+  #t (> flonum-cost empty-cost))
+
+;; Zeros, either sign, a fraction, an exponent or both, an exponent's +
+;; and -, and 15 digits at 10^22 and 10^-22, one of them with an exponent
+;; of 36 that its fraction brings back to 22.
+(define short-decimals
+  '("0.0" "-0.0" "0e5" "-0E-5"
+    "1.5" "-1.5" "2e3" "2e+3" "-2E-3" "0.25e1" "123456789012345e-5" "-1.23456789012345"
+    "123456789012345e22" "-123456789012345e-22" "1.23456789012345e36"))
+
+(test-equal "fast path: in flonum mode, a decimal of at most 15 digits within 10^22 either way allocates at most one flonum"
+  '()
+  (filter (lambda (x) (> (cadr x) flonum-cost)) (costs 'flonum short-decimals)))
+
+;; 16, 17 and 18 digits, either sign, within 10^22 either way.
+(define long-decimals
+  '("1234567890123456e22" "-1234567890123456e-22" "12345678901234567e-5" "-12345678901234567e5"
+    "123456789012345678e-17" "8116065220191916.38" "811606522019191638e21"))
+
+(test-equal "fast path: in flonum mode, a decimal of 16 to 18 digits within 10^22 either way allocates less than the general path's copy of a text its length: a bytevector and a string"
+  '()
+  (costs-failing 'flonum long-decimals <))
+
+;; One past each bound: 19 digits, 10^23 and 10^-23. exact mode's
+;; decimals, and text mode, take the general path too.
+(test-equal "general path: in flonum mode, a 19-digit integer, and decimals of 15 and 16 digits at 10^23 and 10^-23, allocate at least the copy"
+  '()
+  (costs-failing 'flonum
+                 '("1000000000000000000" "-1000000000000000000" "123456789012345e23" "-123456789012345e-23"
+                   "1.23456789012345e37" "1234567890123456e23")
+                 >=))
+
+(test-equal "general path: in exact mode, a 19-digit integer and every decimal allocate at least the copy"
+  '()
+  (costs-failing 'exact '("1000000000000000000" "-1000000000000000000" "1.5" "2e3" "123456789012345e-5") >=))
+
+(test-equal "general path: in text mode, an integer and a decimal allocate at least the copy"
+  '()
+  (costs-failing 'text '("7" "-123456789" "1.5") >=))
 
 (test-end "string-alloc")
 

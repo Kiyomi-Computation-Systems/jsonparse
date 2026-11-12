@@ -6,6 +6,15 @@
   `number-mode` and `digit-limit` options
 - **Related:** ADR-0006, ADR-0010, ADR-0011, ADR-0015; plan M1
 
+> **Revision (2026-11-11, slice 15).** `json-assembler-number!` now reads a
+> short number straight from its buffer, after the digit-limit check
+> (ADR-0027). In `flonum` and `exact` modes an integer of at most 18
+> digits, and in `flonum` mode a decimal of at most 18 digits whose
+> m × 10^e has e within ±22, needs no copy and no string.
+> Every other number takes the path below, which still checks the text
+> and raises on one that isn't a number. The fast path checks the same
+> grammar as it reads, and gives way on anything else.
+
 ## Context
 
 - **ADR-0010** gives the low layer one growable buffer per parser for

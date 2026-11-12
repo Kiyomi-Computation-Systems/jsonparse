@@ -5,6 +5,12 @@
 - **Scope:** how the tree, the assembler and the writer handle numbers
 - **Related:** plan §7 question 7; ADR-0006, ADR-0007, ADR-0010
 
+> **Revision (2026-11-11, slice 15).** M3's fast path is built in the
+> assembler (ADR-0027). Short integers in `flonum` and `exact` modes, and
+> short decimals in `flonum` mode, convert from its buffer without
+> `string->number`. Every mode, the digit limit and the values above hold
+> as this record sets them: every text reads as it did before.
+
 ## Context
 
 JSON numbers have no fixed size, and Scheme has exact integers, exact

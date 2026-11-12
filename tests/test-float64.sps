@@ -1,19 +1,25 @@
 #!r6rs
 ;;; tests/test-float64.sps: parse-number-fxx-test-data's more-test-cases.txt
-;;; and lemire-fast-float.txt, and our own hard cases in
-;;; tests/fixtures/float64/hard-cases.txt (ADR-0012, ADR-0011). Each line
-;;; holds a number's text and the bits of its nearest float64, so every
-;;; expectation in 3 to 5 comes from the file, never from Chez's reader,
-;;; which flonum mode converts with. 6 to 8 compare with what 3 and 4 read.
+;;; and lemire-fast-float.txt, and our own cases in tests/fixtures/float64/:
+;;; hard-cases.txt and fast-path-cases.txt (ADR-0012, ADR-0011, ADR-0027).
+;;; Each line holds a number's text and the bits of its nearest float64, so
+;;; every expectation in 3 to 5 comes from the file, never from Chez's
+;;; reader, which flonum mode converts with, nor from the arithmetic its
+;;; fast path converts with. 6 to 8 compare with what 3 and 4 read.
 ;;;
 ;;; The hard cases are texts whose rounding needs digits past the 17th, up
 ;;; to the 800th, and ties at the subnormal and overflow edges, where
-;;; rounding twice goes wrong. The corpus files have no such texts. Their
-;;; bits came from Python's float() on the host; here each is checked
-;;; against its text's exact value, rounded by hand.
+;;; rounding twice goes wrong. The corpus files have no such texts. The
+;;; fast-path cases sit at the bounds of json-assembler-number!'s fast path
+;;; and either side of them; some round wrong by one flonum operation, so a
+;;; wrong cap on the digits or the power gives a wrong value. The bits of
+;;; our own files came from Python's float() on the host; here each is
+;;; checked against its text's exact value, rounded by hand.
 ;;;
 ;;;   1. the filter: a line's text is kept when it matches JSON's number
-;;;      grammar, checked by hand here. The texts dropped are pinned
+;;;      grammar, checked by hand here. The texts dropped are pinned. Our
+;;;      own files' bits are checked by exact rounding, and the fast-path
+;;;      lines that one flonum operation rounds wrong are pinned
 ;;;   2. the counts of each kind of text, per file
 ;;;   3. flonum mode, with the digit limit raised past the longest text: a
 ;;;      text with a fraction or an exponent reads as the flonum with exactly
@@ -144,7 +150,8 @@
 (define sources
   (list (list "more-test-cases.txt" (string-append dir "more-test-cases.txt") 'fxx)
         (list "lemire-fast-float.txt" (string-append dir "lemire-fast-float.txt") 'fxx)
-        (list "hard-cases.txt" "tests/fixtures/float64/hard-cases.txt" 'bits)))
+        (list "hard-cases.txt" "tests/fixtures/float64/hard-cases.txt" 'bits)
+        (list "fast-path-cases.txt" "tests/fixtures/float64/fast-path-cases.txt" 'bits)))
 
 (define files (map car sources))
 
@@ -176,27 +183,33 @@
 
 ;; --- an exact oracle, for our own hard cases -----------------------------------------
 
-;; text->exact : String -> Exact-Rational, a JSON number's value, decoded
-;; digit by digit. Exact arithmetic is fine for the hard cases, whose
-;; exponents are small, not for the corpus files' 1e-9223372036854775808.
-(define (text->exact s)
+;; text-parts : String -> (List Boolean Nat Integer), a JSON number's sign,
+;; its significand's digits as an integer, and the power of ten that
+;; scales them, decoded digit by digit.
+(define (text-parts s)
   (let* ((cs (string->list s))
          (negative (char=? (car cs) #\-))
          (cs (if negative (cdr cs) cs)))
     (let loop ((cs cs) (digits '()) (scale 0) (in-fraction #f))
       (cond
        ((or (null? cs) (memv (car cs) '(#\e #\E)))
-        (let* ((e (if (null? cs)
-                      0
-                      (let* ((rest (cdr cs))
-                             (minus (and (pair? rest) (char=? (car rest) #\-)))
-                             (rest (if (and (pair? rest) (memv (car rest) '(#\+ #\-))) (cdr rest) rest))
-                             (v (digits->integer (list->string rest))))
-                        (if minus (- v) v))))
-               (v (* (digits->integer (list->string (reverse digits))) (expt 10 (- e scale)))))
-          (if negative (- v) v)))
+        (let ((e (if (null? cs)
+                     0
+                     (let* ((rest (cdr cs))
+                            (minus (and (pair? rest) (char=? (car rest) #\-)))
+                            (rest (if (and (pair? rest) (memv (car rest) '(#\+ #\-))) (cdr rest) rest))
+                            (v (digits->integer (list->string rest))))
+                       (if minus (- v) v)))))
+          (list negative (digits->integer (list->string (reverse digits))) (- e scale))))
        ((char=? (car cs) #\.) (loop (cdr cs) digits scale #t))
        (else (loop (cdr cs) (cons (car cs) digits) (if in-fraction (+ scale 1) scale) in-fraction))))))
+
+;; text->exact : String -> Exact-Rational, a JSON number's value. Exact
+;; arithmetic is fine for the hard cases, whose exponents are small, not
+;; for the corpus files' 1e-9223372036854775808.
+(define (text->exact s)
+  (let* ((p (text-parts s)) (v (* (cadr p) (expt 10 (caddr p)))))
+    (if (car p) (- v) v)))
 
 ;; nearest-bits : Exact-Rational -> Nat, the bits of the float64 nearest Q,
 ;; ties to even; an infinity past the greatest.
@@ -279,7 +292,7 @@
   (map length entries))
 
 (test-equal "filter: the texts dropped from each file"
-  '(() (".0" "9007199254740992.e-256" ".4999999" ".5" ".5000001" "1.e2") ())
+  '(() (".0" "9007199254740992.e-256" ".4999999" ".5" ".5000001" "1.e2") () ())
   (map (lambda (es) (map entry-text (filter (lambda (e) (not (json-number-text? (entry-text e)))) es)))
        entries))
 
@@ -288,6 +301,66 @@
   (filter (lambda (t) (not (= (cadr t) (caddr t))))
           (map (lambda (e) (list (entry-text e) (entry-bits e) (nearest-bits (text->exact (entry-text e)))))
                (list-ref entries 2))))
+
+;; text-bits : String -> Nat, the bits of the float64 nearest a JSON
+;; number's value. A value of 10^309 or more, or under 10^-324, is never
+;; built: by its magnitude alone it is past the greatest float64, or under
+;; half the least, 2^-1075, and rounds to infinity or to zero.
+(define (text-bits s)
+  (let* ((p (text-parts s)) (digits (cadr p)))
+    (if (zero? digits)
+        (nearest-bits 0)
+        (let ((magnitude (+ (caddr p) (string-length (number->string digits)))))
+          (cond ((>= (- magnitude 1) 309) (bitwise-ior (if (car p) sign-bit 0) infinite-bits))
+                ((<= magnitude -324) (if (car p) sign-bit 0))
+                (else (nearest-bits (text->exact s))))))))
+
+(test-equal "fast-path cases: each line's bits are its text's exact value rounded to the nearest float64, ties to even, here, or by its magnitude past 10^309 and under 10^-324"
+  '()
+  (filter (lambda (t) (not (= (cadr t) (caddr t))))
+          (map (lambda (e) (list (entry-text e) (entry-bits e) (text-bits (entry-text e))))
+               (list-ref entries 3))))
+
+(define magnitude-edges '("1.7976931348623157e308" "1e309" "2.5e-324" "9.9e-325" "1e-324"))
+
+(test-equal "text-bits: either side of where it stops building values, it gives what exact rounding does: the greatest float64, infinity, the least subnormal, zero and zero"
+  (let ((edges (list #x7FEFFFFFFFFFFFFF infinite-bits 1 0 0))) (list edges edges))
+  (list (map text-bits magnitude-edges)
+        (map (lambda (t) (nearest-bits (text->exact t))) magnitude-edges)))
+
+;; significand-digits : String -> Nat, the digits before a text's e or E,
+;; leading zeros too
+(define (significand-digits s)
+  (count-digits (list->string (let loop ((cs (string->list s)))
+                                (if (or (null? cs) (memv (car cs) '(#\e #\E)))
+                                    '()
+                                    (cons (car cs) (loop (cdr cs))))))))
+
+;; one-operation-bits : String -> (U Nat #f)
+;; The bits one flonum operation gives TEXT, a JSON number of no sign: m
+;; as a flonum, times or over 10^|e| as one, where TEXT is m x 10^e. Right
+;; whenever both are exact flonums, which is the fast path's
+;; one-operation bound. #f for an integer text, and past 18 digits or
+;; 10^23 either way, where no cap one off reaches.
+(define (one-operation-bits text)
+  (let* ((p (text-parts text)) (x (inexact (cadr p))) (e (caddr p)))
+    (and (not (integer-text? text))
+         (<= (significand-digits text) 18)
+         (<= (abs e) 23)
+         (let ((power (inexact (expt 10 (abs e)))))
+           (bits (if (>= e 0) (fl* x power) (fl/ x power)))))))
+
+(test-equal "fast-path cases: one flonum operation rounds exactly these wrong: 16 digits at 10^23 either way, 16 to 18 digits within it, and 3e23 and 1e-23"
+  '("1234567890123456e23" "1234567890123456e-23" "1.234567890123456e38" "123456.7890123456e-13"
+    "9639805562909595e-21" "9051897384533065e-19" "9649491054857867e7"
+    "95509374722582052e6" "95814023398200199e6" "72114198430871483e2"
+    "811893743652448549e8" "284232076007420010e19" "8116065220191916.38"
+    "3e23" "1e-23")
+  (map entry-text
+       (filter (lambda (e)
+                 (let ((b (one-operation-bits (entry-text e))))
+                   (and b (not (= b (entry-bits e))))))
+               (list-ref entries 3))))
 
 (test-equal "the oracle: ties go to even, and past the greatest float64 is infinite"
   (list #x3FF0000000000000 #x3FF0000000000002 0 2 #x7FEFFFFFFFFFFFFF infinite-bits (bitwise-ior sign-bit 1))
@@ -301,7 +374,8 @@
 (test-equal "counts: lines, kept, integers, finite, zero and infinite, most digits, and over 1,000 digits"
   '(("more-test-cases.txt" 60 60 5 5 23 27 31 0)
     ("lemire-fast-float.txt" 3299 3293 2688 467 15 123 1023 2)
-    ("hard-cases.txt" 24 24 0 21 2 1 800 0))
+    ("hard-cases.txt" 24 24 0 21 2 1 800 0)
+    ("fast-path-cases.txt" 48 48 7 35 5 1 29 0))
   (map (lambda (name ls es)
          (let ((kinds (map kind es)) (ds (map (lambda (e) (count-digits (entry-text e))) es)))
            (list name (length ls) (length es)

@@ -42,6 +42,18 @@
 ;;; the limit, so a long number costs no memory. text mode has no limit and
 ;;; keeps every byte.
 ;;;
+;;; A short number converts straight from the buffer, with no copy and no
+;;; string (ADR-0027): in flonum and exact modes an integer of up to 18
+;;; digits, by fixnum arithmetic; in flonum mode a decimal of up to 18
+;;; digits whose value is m x 10^e with e from -22 to 22, by one flonum
+;;; operation up to 15 digits and by inexact of the exact value above. 18
+;;; is fewer where fixnums are narrower. Any other number, and any text the
+;;; fast path can't read, is copied out, checked and read by string->number.
+;;; Both paths give the same value or stop. In exact mode the fast path
+;;; counts an integer's digits against the limit itself, as the general
+;;; path's range check does: digits given by json-assembler-chars! were not
+;;; counted as they came.
+;;;
 ;;; number-too-long and number-out-of-range are stops: json-assembler-number!
 ;;; returns one, and the handler's number-end passes it on to the parser by
 ;;; returning it, which ends the parse with that code. A stop from
@@ -55,8 +67,8 @@
 ;;;
 ;;; The assembler trusts its parts to come from a parser, but never returns
 ;;; a wrong kind of value. A number's text is checked against JSON's number
-;;; grammar before it converts, and json-assembler-number! raises when it
-;;; fails. Past the digit limit there is no text to check, so the answer is
+;;; grammar before it converts, or by the fast path as it reads, and
+;;; json-assembler-number! raises when it fails. Past the digit limit there is no text to check, so the answer is
 ;;; number-too-long whatever the parts were. An escape that is not a
 ;;; Unicode scalar value raises. A string's bytes that are not UTF-8 are
 ;;; left to utf8->string, which in Chez decodes them to U+FFFD; R6RS
@@ -331,35 +343,203 @@
                  (loop (fx+ i 1) (+ (* v 10) (fx- (bytevector-u8-ref bv i) 48))))
                 (else (loop (fx+ i 1) v))))))
 
+  ;; --- the fast path (ADR-0027) ---------------------------------------------
+
+  ;; fast-digits : Nat
+  ;; The most digits a fast number's significand has: the most d, at most
+  ;; 18, with 10^d - 1 <= (greatest-fixnum), so that every integer of d
+  ;; digits, and each step of reading one, is a fixnum. 18 where the
+  ;; greatest fixnum is 2^60 - 1.
+  (define fast-digits
+    (let loop ((d 0))
+      (if (and (< d 18) (<= (- (expt 10 (+ d 1)) 1) (greatest-fixnum)))
+          (loop (+ d 1))
+          d)))
+
+  ;; one-operation-digits : Nat
+  ;; The most digits a decimal has for one flonum operation to convert it:
+  ;; under 10^15, its significand is under 2^53, an exact flonum.
+  (define one-operation-digits (min 15 fast-digits))
+
+  ;; max-power : Nat
+  ;; The largest power of ten that is an exact flonum: 10^22 is
+  ;; 2^22 x 5^22, and 5^22 is under 2^53.
+  (define max-power 22)
+
+  ;; exponent-cap : Nat
+  ;; Past this exponent, no fast number's e is within max-power, whatever
+  ;; its fraction: e is the exponent less the fraction's digits, fewer than
+  ;; fast-digits of them. An exponent is read no further past it, so a
+  ;; long one never leaves the fixnums.
+  (define exponent-cap (+ max-power fast-digits))
+
+  ;; powers-of-ten : (Exact-Integer -> Real) -> (Vectorof Real)
+  ;; CONVERT of each of 10^0 to 10^max-power.
+  (define (powers-of-ten convert)
+    (let ((v (make-vector (+ max-power 1))))
+      (let loop ((i 0))
+        (when (<= i max-power)
+          (vector-set! v i (convert (expt 10 i)))
+          (loop (+ i 1))))
+      v))
+
+  ;; flonum-powers : (Vectorof Flonum), 10^0 to 10^22, each exact
+  (define flonum-powers (powers-of-ten inexact))
+
+  ;; exact-powers : (Vectorof Exact-Integer), 10^0 to 10^22
+  (define exact-powers (powers-of-ten (lambda (x) x)))
+
+  ;; holds-byte? : Bytevector Index Index Byte -> Boolean
+  ;; Whether BV holds B at I, before END.
+  (define (holds-byte? bv i end b)
+    (and (fx<? i end) (fx=? (bytevector-u8-ref bv i) b)))
+
+  ;; holds-digit? : Bytevector Index Index -> Boolean
+  ;; Whether BV holds a digit at I, before END.
+  (define (holds-digit? bv i end)
+    (and (fx<? i end) (digit? (bytevector-u8-ref bv i))))
+
+  ;; digit-of : Bytevector Index -> Fixnum
+  ;; The value of the digit BV holds at I.
+  (define (digit-of bv i) (fx- (bytevector-u8-ref bv i) 48))
+
+  ;; digit-run : Bytevector Index Index Fixnum Nat -> (Values (U Index #f) Fixnum Nat)
+  ;; Reads the digits of BV from I, up to END or the first byte that isn't
+  ;; one, onto M, a significand of N digits so far: where they stop, the
+  ;; significand and its digits then. Where they stop is #f when the digits
+  ;; would pass fast-digits.
+  (define (digit-run bv i end m n)
+    (cond ((not (holds-digit? bv i end)) (values i m n))
+          ((fx=? n fast-digits) (values #f m n))
+          (else (digit-run bv (fx+ i 1) end (fx+ (fx* m 10) (digit-of bv i)) (fx+ n 1)))))
+
+  ;; exponent-value : Bytevector Index Index Nat -> (U Nat #f)
+  ;; The value of digits V followed by the digits of BV from I to END; #f
+  ;; if a byte is not a digit, or once the value passes exponent-cap.
+  (define (exponent-value bv i end v)
+    (cond ((fx=? i end) v)
+          ((not (digit? (bytevector-u8-ref bv i))) #f)
+          (else (let ((v (fx+ (fx* v 10) (digit-of bv i))))
+                  (and (fx<=? v exponent-cap) (exponent-value bv (fx+ i 1) end v))))))
+
+  ;; one-operation : Fixnum Fixnum -> Flonum
+  ;; M x 10^E by one flonum multiply or divide. When M has at most
+  ;; one-operation-digits digits and E is within max-power, both operands
+  ;; are exact flonums, so its one rounding gives the nearest flonum
+  ;; (Clinger's fast path).
+  (define (one-operation m e)
+    (if (fx>=? e 0)
+        (fl* (fixnum->flonum m) (vector-ref flonum-powers e))
+        (fl/ (fixnum->flonum m) (vector-ref flonum-powers (fx- 0 e)))))
+
+  ;; exact-operation : Fixnum Fixnum -> Flonum
+  ;; The flonum nearest M x 10^E, E within max-power: inexact of the exact
+  ;; value, which R6RS makes the nearest.
+  (define (exact-operation m e)
+    (inexact (if (fx>=? e 0)
+                 (* m (vector-ref exact-powers e))
+                 (/ m (vector-ref exact-powers (fx- 0 e))))))
+
+  ;; fast-flonum : Boolean Fixnum Nat Fixnum -> (U Flonum #f)
+  ;; The flonum nearest M x 10^E, negated if NEG?, where M has N digits; #f
+  ;; when E is past max-power either way. The sign goes on M before it
+  ;; converts, so the result is the only flonum made; a zero has no sign
+  ;; as a fixnum, and is 0.0 or -0.0 here.
+  (define (fast-flonum neg? m n e)
+    (cond ((not (fx<=? (fx- 0 max-power) e max-power)) #f)
+          ((fx=? m 0) (if neg? -0.0 0.0))
+          ((fx<=? n one-operation-digits) (one-operation (if neg? (fx- 0 m) m) e))
+          (else (exact-operation (if neg? (fx- 0 m) m) e))))
+
+  ;; fast-exponent : Bytevector Index Index Boolean Fixnum Nat Nat -> (U Flonum #f)
+  ;; From I, just past a significand M of N digits, FD of them in its
+  ;; fraction: the exponent, if one follows, then the flonum. #f unless
+  ;; the rest is [eE][+-]?[0-9]+, or nothing.
+  (define (fast-exponent bv i end neg? m n fd)
+    (cond ((fx=? i end) (fast-flonum neg? m n (fx- 0 fd)))
+          ((or (holds-byte? bv i end 101) (holds-byte? bv i end 69))      ; e E
+           (let* ((minus? (holds-byte? bv (fx+ i 1) end 45))               ; -
+                  (j (if (or minus? (holds-byte? bv (fx+ i 1) end 43))     ; +
+                         (fx+ i 2)
+                         (fx+ i 1)))
+                  (v (and (fx<? j end) (exponent-value bv j end 0))))
+             (and v (fast-flonum neg? m n (fx- (if minus? (fx- 0 v) v) fd)))))
+          (else #f)))
+
+  ;; fast-decimal : Bytevector Index Index Boolean Fixnum Nat -> (U Flonum #f)
+  ;; From I, just past the integer part of a significand M of N digits:
+  ;; the fraction, if one follows, then the exponent. #f unless a . has a
+  ;; digit after it, and the digits stay within fast-digits.
+  (define (fast-decimal bv i end neg? m n)
+    (if (holds-byte? bv i end 46)                                          ; .
+        (let-values (((j m* n*) (digit-run bv (fx+ i 1) end m n)))
+          (and j (fx>? j (fx+ i 1))
+               (fast-exponent bv j end neg? m* n* (fx- n* n))))
+        (fast-exponent bv i end neg? m n 0)))
+
+  ;; fast-number : json-assembler -> (U Real #f)
+  ;; The number the assembler's text makes, read from its buffer where it
+  ;; lies, or #f for the general path to take it. In flonum and exact
+  ;; modes, an integer of at most fast-digits digits, and in exact mode
+  ;; within the digit limit too; in flonum mode, a decimal whose
+  ;; significand has as many, leading zeros counted, and whose value is
+  ;; m x 10^e with e within max-power either way. #f in text mode, and for
+  ;; any text that is not a JSON number, which the general path raises
+  ;; for.
+  (define (fast-number a)
+    (let ((mode (assembler-mode a)) (bv (assembler-buffer a)) (end (assembler-fill a)))
+      (and (not (eq? mode 'text))
+           (let* ((neg? (holds-byte? bv 0 end 45))                         ; -
+                  (i (if neg? 1 0)))
+             (and (holds-digit? bv i end)
+                  ;; A 0 is the whole integer part.
+                  (not (and (holds-byte? bv i end 48) (holds-digit? bv (fx+ i 1) end)))
+                  (let-values (((j m n) (digit-run bv i end 0 0)))
+                    (cond ((not j) #f)
+                          ;; exact mode's range check counts the text's own
+                          ;; digits: json-assembler-chars! and -escape! add
+                          ;; some without counting them.
+                          ((fx=? j end)
+                           (and (or (eq? mode 'flonum) (fx<=? n (assembler-limit a)))
+                                (if neg? (fx- 0 m) m)))
+                          ((eq? mode 'flonum) (fast-decimal bv j end neg? m n))
+                          (else #f))))))))
+
   ;; json-assembler-number! : json-assembler -> (U Real json-number json-stop)
   ;; The number the parts so far make, converted by the number mode, and
   ;; the assembler emptied. Returns a stop for number-too-long and
   ;; number-out-of-range; number-too-long when both apply, since the text
   ;; past the limit was never kept. Raises if the parts are not a JSON
   ;; number.
+  ;;
+  ;; The digit limit is checked first. Then a short number is read where
+  ;; it lies, by fast-number; any other is copied out, checked against
+  ;; JSON's grammar and read by string->number.
   (define (json-assembler-number! a)
     (check-assembler 'json-assembler-number! a)
-    (if (not (assembler-digits a))
-        (begin (clear! a) too-long)
-        (let* ((bv (take! a))
-               (end (bytevector-length bv)))
-          (let-values (((ok? e-at) (number-shape bv 0 end)))
-            (unless ok?
-              (assertion-violation 'json-assembler-number! "the parts are not a JSON number"
-                                   (utf8->string bv)))
-            (let ((text (utf8->string bv)))
-              (case (assembler-mode a)
-                ((flonum)
-                 ;; string->number reads a number with no fraction and no
-                 ;; exponent as an exact integer, never infinite.
-                 (let ((x (string->number text)))
-                   (if (infinite? x) out-of-range x)))
-                ((exact)
-                 (let ((limit (assembler-limit a)))
-                   (if (> (+ (count-digits bv 0 e-at) (exponent-size bv e-at end limit)) limit)
-                       out-of-range
-                       (string->number (string-append "#e" text)))))
-                (else (new-json-number text))))))))
+    (cond
+      ((not (assembler-digits a)) (clear! a) too-long)
+      ((fast-number a) => (lambda (x) (clear! a) x))
+      (else
+       (let* ((bv (take! a))
+              (end (bytevector-length bv)))
+         (let-values (((ok? e-at) (number-shape bv 0 end)))
+           (unless ok?
+             (assertion-violation 'json-assembler-number! "the parts are not a JSON number"
+                                  (utf8->string bv)))
+           (let ((text (utf8->string bv)))
+             (case (assembler-mode a)
+               ((flonum)
+                ;; string->number reads a number with no fraction and no
+                ;; exponent as an exact integer, never infinite.
+                (let ((x (string->number text)))
+                  (if (infinite? x) out-of-range x)))
+               ((exact)
+                (let ((limit (assembler-limit a)))
+                  (if (> (+ (count-digits bv 0 e-at) (exponent-size bv e-at end limit)) limit)
+                      out-of-range
+                      (string->number (string-append "#e" text)))))
+               (else (new-json-number text)))))))))
 
   ;; json-assembler-reset! : json-assembler -> Void
   ;; Drops any text the assembler holds, ready for a new document.

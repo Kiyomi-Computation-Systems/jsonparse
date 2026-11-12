@@ -1,5 +1,5 @@
-;;; tests/test-number.sps: (jsonparse string)'s numbers held to ADR-0011 and
-;;; ADR-0016, with the number-mode and digit-limit options.
+;;; tests/test-number.sps: (jsonparse string)'s numbers held to ADR-0011,
+;;; ADR-0016 and ADR-0027, with the number-mode and digit-limit options.
 ;;;
 ;;; The oracle builds a number's expected value from its digits alone, as
 ;;; integer x 10^(exponent - fraction digits) with its sign, never with
@@ -40,6 +40,19 @@
 ;;; 7. json-number, and a grammar differential with the parser, over / and
 ;;;    : too, the bytes either side of the digits.
 ;;; 8. The number-mode and digit-limit options.
+;;; 9. The fast path's bounds (ADR-0027): integers of 18 digits and 19,
+;;;    decimals of 15 and 16 digits at 10^22 and 10^23 either way, zeros
+;;;    and exponents, to an assembler and to a tree builder whole and in
+;;;    1-byte feeds, in all three modes; small limits; an assembler on fast
+;;;    numbers beside one on general ones; malformed texts the fast path
+;;;    must give way on; and that the property's generator makes numbers
+;;;    of each kind ADR-0027's bounds tell apart, judged by their text.
+;;;
+;;; The oracle's flonum is inexact of the exact value, and so is the fast
+;;; path's for a decimal of 16 to 18 digits within 10^22 either way: there
+;;; the oracle is not independent of the library. tests/test-float64.sps
+;;; checks those texts against bits from Python, rechecked by exact
+;;; rounding.
 ;;;
 ;;; make test runs the default seed. A seed, and a multiplier of the
 ;;; properties' case counts, may be given by hand:
@@ -59,6 +72,7 @@
         (jsonparse parser)
         (jsonparse options)
         (jsonparse string)
+        (jsonparse tree)
         (only (byte-machine test property-driver) schedules-for)
         (only (byte-machine test prng) make-prng))
 
@@ -510,7 +524,60 @@
 
 (define property-tally (make-tally))
 
+;; fast-digits : Nat
+;; ADR-0027's cap on a fast number's digits, derived as the design says:
+;; the most digits d, at most 18, with 10^d - 1 no more than the greatest
+;; fixnum.
+(define fast-digits
+  (let loop ((d 0))
+    (if (and (< d 18) (<= (- (expt 10 (+ d 1)) 1) (greatest-fixnum))) (loop (+ d 1)) d)))
+
+;; path-of : String Limit -> Symbol
+;; Which way ADR-0027's bounds send TEXT, a JSON number, in flonum mode
+;; under LIMIT, judged from the text alone, never by watching the
+;; library: too-long past the limit; fast-integer for an integer of at
+;; most fast-digits digits; for a decimal of as many whose m x 10^e has e
+;; within 22 either way, one-operation at 15 digits or fewer and
+;; exact-operation above; general for any other.
+(define (path-of text limit)
+  (let* ((a (anatomy text))
+         (frac (or (list-ref a 2) ""))
+         (exp-digits (or (list-ref a 4) ""))
+         (n (+ (string-length (list-ref a 1)) (string-length frac)))
+         (e (- (* (if (list-ref a 3) -1 1) (digits-value exp-digits)) (string-length frac))))
+    (cond ((> (+ n (string-length exp-digits)) limit) 'too-long)
+          ((> n fast-digits) 'general)
+          ((not (or (list-ref a 2) (list-ref a 4))) 'fast-integer)
+          ((> (abs e) 22) 'general)
+          ((<= n (min 15 fast-digits)) 'one-operation)
+          (else 'exact-operation))))
+
+;; numbers-in : String -> (Listof String)
+;; The numbers in a generated document: its runs of - + . e E and digits.
+(define (numbers-in doc)
+  (let loop ((cs (string->list doc)) (run '()) (acc '()))
+    (let ((ended (if (null? run) acc (cons (list->string (reverse run)) acc))))
+      (cond ((null? cs) (reverse ended))
+            ((memv (car cs) (string->list "-+.eE0123456789")) (loop (cdr cs) (cons (car cs) run) acc))
+            (else (loop (cdr cs) '() ended))))))
+
+;; How many of the property's numbers each path's bounds take, by path-of,
+;; and how many integers of 17 to 19 digits within their limit it makes. A
+;; check of the generator, not of the library: only test-string-alloc.sps
+;; sees which path ran.
+(define path-tally (make-tally))
+
+(define (note-paths! doc limit)
+  (for-each (lambda (t)
+              (let ((path (path-of t limit)) (a (anatomy t)))
+                (tally! path-tally path)
+                (when (and (not (eq? path 'too-long)) (not (or (list-ref a 2) (list-ref a 4)))
+                           (<= 17 (string-length (list-ref a 1)) 19))
+                  (tally! path-tally 'integer-17-to-19))))
+            (numbers-in doc)))
+
 (define (number-check kase)
+  (note-paths! (car kase) (cadr kase))
   (let* ((bv (string->utf8 (car kase)))
          (ends (number-end-offsets bv))
          (limits (list (cadr kase))))
@@ -1301,6 +1368,192 @@
                          (json-options-depth-limit o)))
        (list (make-json-options 'digit-limit 7 'depth-limit 9 'number-mode 'text)
              (make-json-options 'number-mode 'exact 'depth-limit 3 'digit-limit 12))))
+
+;; ============ 9. The fast path's bounds (ADR-0027) ==================================
+
+;; built : Mode Limit String (U Nat #f) -> Outcome
+;; What a tree builder under MODE and LIMIT makes of TEXT, fed whole or in
+;; K-byte feeds, then finished: a stop's code as a stop, any other error as
+;; an error, and a raise as what it carried.
+(define (built mode limit text k)
+  (guard (e (#t (raised-entry e)))
+    (build mode limit text k)))
+
+(define (build mode limit text k)
+  (let* ((b (make-json-builder (options-for mode limit)))
+         (bv (bytes text))
+         (n (bytevector-length bv))
+         (ended (lambda (r)
+                  (let ((code (json-result-code r)))
+                    (if (memq code '(number-too-long number-out-of-range))
+                        (list 'stop code)
+                        (list 'error code))))))
+    (let loop ((i 0))
+      (if (< i n)
+          (let* ((j (if k (min n (+ i k)) n))
+                 (r (json-builder-feed! b bv i j)))
+            (if (eq? (json-result-status r) 'error) (ended r) (loop j)))
+          (let ((r (json-builder-finish! b)))
+            (if (eq? (json-result-status r) 'finished)
+                (taken (json-builder-value b))
+                (ended r)))))))
+
+;; three-ways : Mode Limit String -> (List String Outcome Outcome Outcome)
+;; TEXT given to an assembler in one part, and to a tree builder whole and
+;; in 1-byte feeds.
+(define (three-ways mode limit text)
+  (list text (assemble mode limit (list text)) (built mode limit text #f) (built mode limit text 1)))
+
+;; the-oracle-thrice : Mode Limit String -> (List String Outcome Outcome Outcome)
+(define (the-oracle-thrice mode limit text)
+  (let ((e (expected-number text mode limit))) (list text e e e)))
+
+(define (nines n) (make-string n #\9))
+
+;; Integers of up to 18 digits are fixnums by arithmetic; 19 take the
+;; general path. 2^60 - 1 is the greatest fixnum on a 64-bit Chez, and 2^60
+;; one past it.
+(define fast-bound-integers
+  (list "0" "-0" "1" "-1" (nines 18) (str "-" (nines 18)) (str "1" (zeros 17))
+        (nines 19) (str "-" (nines 19)) "1152921504606846975" "1152921504606846976"))
+
+;; 15 digits take one flonum operation and 16 the exact one, within 10^22
+;; either way; at 10^23 and 10^-23 both take the general path. Each is
+;; written plain and with a fraction, which moves e.
+(define fast-bound-decimals
+  '("123456789012345e22" "123456789012345e23" "123456789012345e-22" "123456789012345e-23"
+    "1.23456789012345e36" "1.23456789012345e37" "-12345.6789012345e-12" "-12345.6789012345e-13"
+    "1234567890123456e22" "1234567890123456e23" "1234567890123456e-22" "1234567890123456e-23"
+    "1.234567890123456e37" "-1.234567890123456e38" "123456.7890123456e-12" "-123456.7890123456e-13"
+    "3e22" "3e23" "1e-22" "1e-23" "123456789012345678e-17" "-123456789012345678e-17"
+    ;; Leading zeros count as digits: 18 digits, then 19.
+    "0.00000000000000001" "0.000000000000000001"))
+
+(define fast-bound-zeros '("0.0" "-0.0" "0e0" "-0e5" "-0.000"))
+
+(define fast-bound-exponents
+  (list "1E+2" "1e-2" (str "1e" (zeros 27) "1") (str "1e" (nines 21)) (str "1e-" (nines 21))))
+
+(define fast-bound-texts
+  (append fast-bound-integers fast-bound-decimals fast-bound-zeros fast-bound-exponents))
+
+(for-each
+ (lambda (mode)
+   (test-equal (str "ADR-0027: " (symbol->string mode)
+                    ": the fast path's bounds, either side, to an assembler and a tree builder whole and in 1-byte feeds: the oracle's outcomes")
+     (map (lambda (t) (the-oracle-thrice mode 1000 t)) fast-bound-texts)
+     (map (lambda (t) (three-ways mode 1000 t)) fast-bound-texts)))
+ modes)
+
+;; What the oracle gives at a few of the bounds, written out.
+(test-equal "ADR-0027: the oracle at the bounds: 19 nines exact, -0 0, -0.0 and -0e5 -0.0, 1e+2 100.0, a 21-digit exponent out of range or 0.0"
+  (list '(number 9999999999999999999) '(number 0) '(number -0.0) '(number -0.0) '(number 100.0)
+        '(stop number-out-of-range) '(stop number-out-of-range) '(number 0.0)
+        '(stop number-out-of-range))
+  (list (expected-number (nines 19) 'flonum 1000) (expected-number "-0" 'flonum 1000)
+        (expected-number "-0.0" 'flonum 1000) (expected-number "-0e5" 'flonum 1000)
+        (expected-number "1E+2" 'flonum 1000)
+        (expected-number (str "1e" (nines 21)) 'flonum 1000) (expected-number (str "1e" (nines 21)) 'exact 1000)
+        (expected-number (str "1e-" (nines 21)) 'flonum 1000) (expected-number (str "1e-" (nines 21)) 'exact 1000)))
+
+(test-equal "ADR-0027: limit 3: 1234 is number-too-long and 123 is 123 in flonum and exact modes; in exact mode 1.5e2 is out of range, in flonum mode 150.0"
+  (list (list "1234" '(stop number-too-long) '(stop number-too-long) '(stop number-too-long))
+        (list "123" '(number 123) '(number 123) '(number 123))
+        (list "1234" '(stop number-too-long) '(stop number-too-long) '(stop number-too-long))
+        (list "123" '(number 123) '(number 123) '(number 123))
+        (list "1.5e2" '(stop number-out-of-range) '(stop number-out-of-range) '(stop number-out-of-range))
+        (list "1.5e2" '(number 150.0) '(number 150.0) '(number 150.0)))
+  (list (three-ways 'flonum 3 "1234") (three-ways 'flonum 3 "123")
+        (three-ways 'exact 3 "1234") (three-ways 'exact 3 "123")
+        (three-ways 'exact 3 "1.5e2") (three-ways 'flonum 3 "1.5e2")))
+
+;; Two assemblers at once, their parts interleaved: one on numbers the
+;; fast path takes, one on numbers it gives way on, each taking two in turn.
+(test-equal "ADR-0027: interleaved assemblers, one on fast numbers and one on general ones, each give their own"
+  (list '(number -12.5) (list 'number (expt 10 19)) '(number 7) (list 'number (inexact (/ 3 (expt 10 30)))))
+  (let ((fast (make-json-assembler (options-for 'flonum 1000)))
+        (general (make-json-assembler (options-for 'flonum 1000))))
+    (give! fast "-1") (give! general "1") (give! fast "2.") (give! general (zeros 19))
+    (give! fast "5")
+    (let* ((f1 (assemble-with fast '()))
+           (g1 (assemble-with general '())))
+      (give! general "3e") (give! fast "7") (give! general "-30")
+      (let* ((f2 (assemble-with fast '()))
+             (g2 (assemble-with general '())))
+        (list f1 g1 f2 g2)))))
+
+;; assemble-mixed : Mode Limit (Listof (U (Pair 'chars String) (Pair 'number String) (Pair 'escape Nat))) -> Outcome
+;; A fresh assembler under MODE and LIMIT given each part in turn, by
+;; json-assembler-chars!, json-assembler-number-chars! or
+;; json-assembler-escape!, then the number taken.
+(define (assemble-mixed mode limit parts)
+  (let ((a (make-json-assembler (options-for mode limit))))
+    (guard (e (#t (raised-entry e)))
+      (for-each (lambda (p)
+                  (case (car p)
+                    ((escape) (json-assembler-escape! a (cdr p)))
+                    ((chars) (let ((bv (bytes (cdr p)))) (json-assembler-chars! a bv 0 (bytevector-length bv))))
+                    (else (give! a (cdr p)))))
+                parts)
+      (taken (json-assembler-number! a)))))
+
+;; json-assembler-chars! and json-assembler-escape! count no digits, so
+;; exact mode's range check, which counts the text's own, is what stops
+;; digits given through them. The fast path must not skip it.
+(test-equal "ADR-0027: exact mode: digits given by json-assembler-chars! and json-assembler-escape!, which count none, are still held to the limit by the range check; under the limit, and in flonum mode, the integer"
+  (list '(stop number-out-of-range) '(stop number-out-of-range) '(stop number-out-of-range)
+        '(stop number-out-of-range) '(stop number-out-of-range)
+        '(number 123) '(number 123))
+  (list (assemble-mixed 'exact 2 '((chars . "123")))
+        (assemble-mixed 'exact 2 '((number . "12") (chars . "3")))
+        (assemble-mixed 'exact 2 '((chars . "1") (number . "23")))
+        (assemble-mixed 'exact 17 (list '(chars . "1") (cons 'number "23456789012345678")))
+        (assemble-mixed 'exact 1 '((escape . 49) (escape . 50) (escape . 51)))
+        (assemble-mixed 'exact 3 '((chars . "123")))
+        (assemble-mixed 'flonum 2 '((chars . "123")))))
+
+;; Texts the fast path must give way on, so the general path raises: those
+;; section 6 lacks.
+(define fast-path-not-numbers '("-01" "00" "1.e5" "1..2" "1e5.5" "--1" "1-" "0x1"))
+
+(for-each
+ (lambda (mode)
+   (test-equal (str "ADR-0027: " (symbol->string mode) ": more texts that are not JSON numbers raise, naming their text")
+     (map (lambda (t) (list t (refused-number t))) fast-path-not-numbers)
+     (outcomes mode 1000 fast-path-not-numbers)))
+ modes)
+
+;; Section 7's short strings, through the modes the fast path runs in. A
+;; string the parser refuses must raise as a non-number, naming itself;
+;; one it accepts must not raise.
+(test-equal "ADR-0027: every string of up to 4 characters from -+.eE019/: a flonum- and an exact-mode assembler raise, naming it, exactly when the parser refuses it as a document"
+  (list 'strings 11111 'disagreeing '() 'both-verdicts #t)
+  (let* ((verdicts (map (lambda (t)
+                          (list t (parser-accepts? t)
+                                (map (lambda (mode) (assemble mode 1000 (list t))) '(flonum exact))))
+                        short-strings))
+         (disagreeing
+          (filter (lambda (v)
+                    (not (for-all (lambda (o)
+                                    (if (cadr v)
+                                        (not (eq? (car o) 'raised))
+                                        (equal? o (refused-number (car v)))))
+                                  (caddr v))))
+                  verdicts)))
+    (list 'strings (length short-strings) 'disagreeing (take-up-to disagreeing 3)
+          'both-verdicts (and (exists cadr verdicts) (exists (lambda (v) (not (cadr v))) verdicts) #t))))
+
+(put-string (current-output-port)
+            (str "number: generated-numbers' paths:"
+                 (apply str (map (lambda (p) (str " " (symbol->string (car p)) " " (number->string (cdr p))))
+                                 (list-sort (lambda (x y) (string<? (symbol->string (car x)) (symbol->string (car y))))
+                                            (tally-counts path-tally))))
+                 "\n"))
+
+(test-equal "the generator makes numbers for each of ADR-0027's paths, judged by their text: the integer fast path, 17 to 19 digits among them, both decimal ones, the general path and the limit"
+  '()
+  (filter (lambda (k) (= (count-of path-tally k) 0))
+          '(fast-integer integer-17-to-19 one-operation exact-operation general too-long)))
 
 (test-end "number")
 

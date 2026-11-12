@@ -8,6 +8,11 @@
   measurement and what it says about M3's levers
 - **Related:** ADR-0003, ADR-0004, ADR-0008, ADR-0013; the plan's M2 and M3
 
+> **Revision (2026-11-11, slice 15).** The number fast path (lever 4) is
+> built in the assembler, not the grammar (ADR-0027). As this record
+> expected, it speeds `tree` on number files and leaves `events`, and so
+> the M3 targets, where they were.
+
 ## Context
 
 M3 starts by measuring (plan M3, lever 1). ADR-0013 chose the comparators,
