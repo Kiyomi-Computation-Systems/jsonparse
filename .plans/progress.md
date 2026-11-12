@@ -70,6 +70,10 @@ newest first.
   16 KiB or the port's end, and that nothing promised a port's raise
   passes through. The owner chose to keep the 16 KiB read and say so
   (ADR-0019's revision).
+- **Slice 15, the number fast path, is done** (close-out below). A short
+  number converts straight from the assembler's buffer, not through the
+  grammar as the plan's lever 4 had it (ADR-0027). `tree` takes 21% to
+  30% less time on `ints-40k` and `canada`, and neither M3 target moves.
 
 ## Next
 
@@ -132,7 +136,10 @@ newest first.
     regenerates on it (ADR-0026). The owner retook byte-machine's own
     baseline on the M1 laptop at v0.9.0, M3's other exit criterion
     (byte-machine #183).
-15. **The number fast path** (lever 4).
+15. **The number fast path** (done, close-out below): plan M3's lever 4,
+    built in the assembler instead of the grammar. Integers of up to 18
+    digits, and in `flonum` mode decimals of up to 18 digits with e within
+    ±22, convert from its buffer (ADR-0027).
 16. **M2's decision,** measured (ADR-0004), before the callback cut, so that
     one ABI bump carries both.
 17. **The callback step and span delivery inlined** in byte-machine: ABI 9 to
@@ -144,6 +151,100 @@ newest first.
 **Then:** M4, YAJL's options; and the rest of M5.
 
 ## Close-outs
+
+### Slice 15: the number fast path (2026-11-11)
+
+- **The choice:** the owner's, on 2026-11-11, after a probe measured it:
+  the fast path in `(jsonparse string)`, not the grammar's
+  `integer-accumulate`. That could have saved at most the copy and the
+  digit count, 22 ns of a short integer's 39 to 42. It would also have
+  added work to `events` and done nothing for decimals (ADR-0027).
+- **Landed:**
+  - **`json-assembler-number!`** reads a short number from its buffer,
+    after the digit-limit check:
+    - an integer of up to 18 digits in `flonum` and `exact` modes, by
+      fixnum arithmetic, and in `exact` mode within the limit by its own
+      digits;
+    - in `flonum` mode, a decimal of up to 18 digits with e within ±22:
+      by one flonum operation up to 15 digits, and by `inexact` of the
+      exact value above that.
+
+    The cap comes from `(greatest-fixnum)`. Every other text takes the
+    general path, unchanged.
+  - **Tests:**
+    - `test-string-alloc` section 6 shows which path ran, by what a number
+      allocates: nothing for a fast integer, one flonum for a decimal of up
+      to 15 digits, less than the copy for 16 to 18. Each bound has a
+      control one past it;
+    - `test-number` section 9 covers:
+      - the bounds either side, to an assembler and to a tree builder,
+        whole and in 1-byte feeds, in all three modes;
+      - small limits, interleaved assemblers and malformed texts;
+      - every string of up to 4 characters, against the parser;
+      - digits given by `json-assembler-chars!` and
+        `json-assembler-escape!`;
+      - the generator's numbers, counted by class;
+    - `test-float64` reads a new fixture, `fast-path-cases.txt`: 48 lines
+      with bits from Python, each rechecked by exact rounding. One flonum
+      operation rounds 15 of them wrong, and the suite pins which.
+  - **Records:** ADR-0027; revision notes in ADR-0011, ADR-0016 and
+    ADR-0023; the plan's lever 4; the global constraints; this ledger; and
+    an `[Unreleased]` entry in `CHANGELOG.md`.
+- **Evidence:**
+  - **`make test`:** 39 suites green (number 89, float64 17, string-alloc
+    35), rerun by me after every fix.
+  - **Differentials against main:**
+    - the probe's 152,701 number texts in `flonum` and `exact` modes,
+      identical;
+    - the review's 2.26 million cases: short strings under four limits,
+      random numbers split into parts, and parts by `json-assembler-chars!`.
+      Identical once the fix below was in.
+  - **Mutants:**
+    - the builder's 27 all failed but two, which are equivalent: `<` for
+      `<=` in the cap's search, and an exponent cap of 39;
+    - mine, 12: six of the builder's rerun, and six new. Two of the new
+      survived, an exponent cap of 22 and an exponent's `+` unread, until
+      `2e+3` and `1.23456789012345e36` joined the allocation list;
+    - the review's two zero mutants survived until zeros joined it too. I
+      reran both against the final code.
+  - **Timing,** main against the final code, taking turns twice, pinned to
+    CPU 7:
+    - `tree` took 21% to 30% less time on `ints-40k` and `canada`, 10% to
+      15% on `citm_catalog`, 9% to 10% on `records-2k`, and 4% to 5% on
+      `twitter`;
+    - `events`' rate moved −5.5% to +5.7%, in code it doesn't run.
+- **Review:** an adversarial review (Opus) found:
+  - **one defect:** in `exact` mode, the fast path trusted the digit count
+    `json-assembler-number-chars!` keeps. `json-assembler-chars!` and
+    `json-assembler-escape!` add digits without counting them. So `123`
+    given by `json-assembler-chars!` under a limit of 2 read as 123, where
+    main stopped with `number-out-of-range`. The parser never does this.
+    Fixed and tested: the fast path counts an integer's digits against the
+    limit itself;
+  - **two test gaps:**
+    - no zero was in the allocation lists, so zeros could take the general
+      path unseen. The brief listed none;
+    - the generator tally judges each number's path from its text, so it
+      can't fail from the code. It is renamed to say so;
+  - **record claims:**
+    - R6RS doesn't require `inexact` to give the nearest flonum, only the
+      nearest inexact number;
+    - 13,084 counted results, not texts (7,730);
+    - "within 10^±22" for a bound on e;
+    - the library header didn't mention the fast path's grammar check;
+    - "the digits' copy" for the copy and the count;
+    - the CHANGELOG entry was missing;
+    - one nit.
+
+  All are fixed.
+- **Known:**
+  - **A 17-digit decimal still costs 271 to 285 ns past its copy,** in
+    `inexact`. Eisel and Lemire's algorithm might go lower; it is
+    unmeasured (ADR-0027).
+  - **The 16-to-18-digit allocation check has a margin of 48 bytes**
+    (208 to 240 against 288), measured only on amd64. CI's arm64 run is
+    the first look there.
+  - **Neither M3 target moves:** the fast path doesn't run in `events`.
 
 ### Issue 17: `read-json` on a port whose bytes are still coming (2026-11-10)
 

@@ -107,9 +107,15 @@ record disagree, the record wins and this file gets fixed.
 - **The digit limit and the range checks stop from `number-end`:**
   `number-too-long`, and `number-out-of-range` for a flonum too large or an
   `exact` value past the limit (ADR-0011, ADR-0015, ADR-0016).
-- **A number's text is checked against JSON's grammar before it converts.**
-  A `json-number` record keeps a copy of its text and gives out copies
-  (ADR-0016).
+- **A number's text is checked against JSON's grammar before it converts,**
+  or as the fast path reads it. A `json-number` record keeps a copy of its
+  text and gives out copies (ADR-0016, ADR-0027).
+- **A short number converts from the buffer, after the digit-limit check:**
+  an integer of at most 18 digits in `flonum` and `exact` modes, and in
+  `flonum` mode a decimal of at most 18 digits whose m × 10^e has e within
+  ±22. The cap comes from `(greatest-fixnum)`. Every other number takes the
+  general path. Every text reads as it would there, digits given by
+  `json-assembler-chars!` included (ADR-0027).
 - **Taking a value empties the assembler.** A parser reset doesn't reach
   it (ADR-0015, ADR-0016).
 
@@ -229,9 +235,9 @@ record disagree, the record wins and this file gets fixed.
   parse-number-fxx's, isn't JSON text: its numbers are fed whole and a byte
   at a time (ADR-0012).
 - **The float64 lane checks flonums against their bits,** from the files
-  and from our own hard cases, not against the Scheme reader the library
-  converts with. A suite whose flonum expectations come from Chez says so in
-  its header (ADR-0011, ADR-0012).
+  and from our own hard cases, not against the Scheme reader or `inexact`,
+  which the library converts with. A suite whose flonum expectations come
+  from Chez says so in its header (ADR-0011, ADR-0012, ADR-0027).
 - **Every name a `(jsonparse ...)` library exports has one entry in
   `docs/reference.md`,** naming the libraries that export it, and is named
   in a guide, which the reference, the home page and `installing.md` are

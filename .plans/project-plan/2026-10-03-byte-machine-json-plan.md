@@ -369,6 +369,12 @@ them:
 4. **Number fast path.** `integer-accumulate` into a `uint 64` in parallel with
    the span, with overflow falling back to the text. This needs one more field
    and an event that tells the consumer which value to use.
+   **Built 2026-11-11 in the assembler instead (ADR-0027):** a short integer,
+   or a short decimal in `flonum` mode, converts straight from the
+   assembler's buffer. Measured on a probe, the grammar's version could save
+   at most the copy and the digit count, 22 ns of a short integer's 39 to
+   42. It would add work to every number in `events`, change the handler,
+   and do nothing for decimals.
 
 **Exit criteria:**
 
