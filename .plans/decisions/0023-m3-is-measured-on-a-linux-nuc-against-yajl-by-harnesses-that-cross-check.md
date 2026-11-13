@@ -13,6 +13,18 @@
 > expected, it speeds `tree` on number files and leaves `events`, and so
 > the M3 targets, where they were.
 
+> **Revision (2026-11-12, slice 16).**
+>
+> - **The callback cut isn't built for now** (ADR-0028). A probe put the
+>   cut and M2 together at 3.34× on `records-2k` and 4.44× on
+>   `escaped-string`, so neither target would be met. The owner chose on
+>   2026-11-12 to revisit the targets once jsonparse #20 is taken.
+> - **`make bench` doesn't compile ahead of time,** though decision 6 says
+>   it does. It compiles jsonparse in the process it times (jsonparse #22).
+>   That skews a figure by 1% to 4% at the median, and by up to 22% for
+>   one file and lane. So the context's premise doesn't hold either: such a
+>   process times differently in every round, not just the first.
+
 ## Context
 
 M3 starts by measuring (plan M3, lever 1). ADR-0013 chose the comparators,

@@ -8,6 +8,12 @@
   and what the report does with a comparator that fails or disagrees
 - **Related:** ADR-0003, ADR-0007, ADR-0008, ADR-0013, ADR-0023
 
+> **Revision (2026-11-12, slice 16).** SRFI 180 and chez-json are compiled
+> ahead of time in a step of their own, but jsonparse isn't, as decision 2
+> says it is. `make bench` compiles jsonparse in the process it times
+> (jsonparse #22), so jsonparse's figures carry a skew of 1% to 4% at the
+> median, and the comparators' don't.
+
 ## Context
 
 ADR-0013 chose the comparators, and ADR-0023 built `make bench` for

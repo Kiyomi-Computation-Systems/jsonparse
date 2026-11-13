@@ -12,6 +12,15 @@
 > step and span delivery need ABI 10, so they get an ABI bump of their own,
 > with M2 if it is taken (ADR-0004), not the run node's.
 
+> **Revision (2026-11-12, slice 16).** The cut isn't built for now: the
+> owner chose to keep ABI 9 (ADR-0028). A probe of it took 8.5% off
+> `records-2k`'s `events` time. It waits as byte-machine #184 and jsonparse
+> #20.
+>
+> `make bench-callbacks`, which made this record's split, compiles in the
+> process it times (jsonparse #22). So the split carries a skew of 1% to 4%
+> at the median, and decision 3's "compiled ahead of time" doesn't hold.
+
 ## Context
 
 ADR-0023 found that callbacks add 6 to 13 ns per counted value in

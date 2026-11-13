@@ -1,9 +1,15 @@
 # ADR-0004: The nesting stack lives in jsonparse
 
-- **Status:** Accepted, revised on 2026-11-09
+- **Status:** Accepted, revised on 2026-11-12
 - **Date:** 2026-10-30
 - **Scope:** where the parser keeps track of open objects and arrays; plan M1 and M2
-- **Related:** plan §4.3 and M2; ADR-0002; ADR-0005
+- **Related:** plan §4.3 and M2; ADR-0002; ADR-0005; ADR-0028
+
+> **Revision (2026-11-12, slice 16).** M2 was measured on today's code. The
+> stack in the machine took 11.8% off `records-2k`'s `events` time: 8 to 10
+> ns a value inside a container on `records-2k` and `ints-40k`. The owner chose to keep byte-machine's
+> ABI at 9 for now, so the stack stays here (ADR-0028). M2 waits as
+> jsonparse #21 and byte-machine #185.
 
 > **Revision (2026-11-09, slice 14).** M3's run node shipped in byte-machine
 > 0.9.0 with no ABI bump (ADR-0026), so there is no run-node release for M2

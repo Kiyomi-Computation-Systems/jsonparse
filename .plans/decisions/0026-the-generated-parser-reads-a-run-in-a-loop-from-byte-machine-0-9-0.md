@@ -9,6 +9,16 @@
   byte-machine's decision 0059; the brief
   [2026-11-09-upstream-run-loop-brief.md](../2026-11-09-upstream-run-loop-brief.md)
 
+> **Revision (2026-11-12, slice 16).** The callback step, which the
+> consequences below name as the next lever, isn't inlined for now
+> (ADR-0028). It waits as byte-machine #184 and jsonparse #20.
+>
+> Every run below compiled its libraries in the process it then timed,
+> which skews a figure by 1% to 4% at the median (jsonparse #22). That
+> includes the prototype's "12% to 13%". Slice 16's probe loaded compiled
+> objects and put it at 8.5% off `records-2k`'s `events` time, and 12.5%
+> off `parse`.
+
 ## Context
 
 **Plan M3's lever 2 was a run node:** a new node kind, so a decision record
