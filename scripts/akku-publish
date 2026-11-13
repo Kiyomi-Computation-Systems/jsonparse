@@ -5,7 +5,8 @@
 # is pushed: it needs git, gpg with the release key, and the network.
 #
 #   1. The version is Akku.manifest's, and the tag is vVERSION, which must be
-#      on GitHub. Akku 1.2.0 must be unpacked (make akku-deps).
+#      in the repository at the manifest's (location (git URL)), the URL Akku
+#      publishes. Akku 1.2.0 must be unpacked (make akku-deps).
 #   2. The repository is cloned fresh into build/akku-publish/, at the tag,
 #      and the clone's Akku.manifest must give the same version: akku
 #      publishes the version the clone names. `akku publish` refuses a git
@@ -22,12 +23,19 @@
 #      with curl and doesn't fail on an HTTP error, so read the archive's
 #      replies in its output, and once the index lists the version, check
 #      that `akku install jsonparse` works in an empty directory.
+#
+# AKKU_PUBLISH_RELEASE_KEY names another release key by its fingerprint, for
+# tests/check-akku-publish.sh, which can't hold the real one. The script
+# says so when it is set to any other key.
 set -eu
 
-release_key=CC2923E50902E936049B696B9EBA259B8EAC5130
-repo=https://github.com/Kiyomi-Computation-Systems/jsonparse.git
+kiyomi_key=CC2923E50902E936049B696B9EBA259B8EAC5130
+release_key=${AKKU_PUBLISH_RELEASE_KEY:-$kiyomi_key}
 
 fail() { echo "akku-publish: $*" >&2; exit 1; }
+
+[ "$release_key" = "$kiyomi_key" ] ||
+  echo "akku-publish: AKKU_PUBLISH_RELEASE_KEY names $release_key, not the Kiyomi Computation Systems release key" >&2
 
 root=$(cd "$(dirname "$0")/.." && pwd)
 work=$root/build/akku-publish
@@ -41,6 +49,8 @@ real_gpg=$(command -v gpg)
 
 version=$(sed -n 's/^(akku-package ("jsonparse" "\([^"]*\)").*/\1/p' "$root/Akku.manifest")
 [ -n "$version" ] || fail "Akku.manifest gives jsonparse no version"
+repo=$(sed -n 's/^ *(location (git "\([^"]*\)")).*/\1/p' "$root/Akku.manifest")
+[ -n "$repo" ] || fail "Akku.manifest gives no (location (git URL)), the repository to publish"
 tag=v$version
 git ls-remote --exit-code --tags "$repo" "refs/tags/$tag" >/dev/null ||
   fail "$repo has no tag $tag: tag the release and push the tag first"

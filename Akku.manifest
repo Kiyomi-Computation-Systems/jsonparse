@@ -17,6 +17,10 @@
 ;; depends/dev: chez-cmark-gfm renders docs/ into the docs site (`make site`,
 ;; ADR-0021). Nothing under src/ and no tests/test-*.sps imports it.
 ;;
+;; location is the repository Akku publishes the release from: akku publish
+;; would otherwise take it from the clone's remote. scripts/akku-publish
+;; clones it, and `make check-akku-publish` tests that (ADR-0022).
+;;
 ;; The version follows semantic versioning: before 1.0, any release may
 ;; change the API, and a new minor version comes with a new byte-machine
 ;; runtime ABI or a move to a new byte-machine 0.x, such as from ^0.8.0 to
@@ -30,6 +34,7 @@
    "When you do want a tree, one call gives you plain Scheme values.")
   (authors "Kiyomi Computation Systems LLC")
   (homepage "https://github.com/Kiyomi-Computation-Systems/jsonparse")
+  (location (git "https://github.com/Kiyomi-Computation-Systems/jsonparse.git"))
   (license "BSD-3-Clause")
   (depends ("byte-machine" "^0.9.0"))
   (depends/dev ("chez-cmark-gfm" "^2.0.0")))

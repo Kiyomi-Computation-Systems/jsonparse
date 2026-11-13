@@ -94,7 +94,11 @@ newest first.
   0.1.0's API. The owner's first `make test` on the M1 found
   `scripts/bench-chez` broken on macOS. After the fix the second passed
   all 40 suites. `v0.2.0` was tagged on 2026-11-13, on `641c73d`, and the
-  site deployed. Akku waits (ADR-0022's revision).
+  site deployed.
+- **Slice 19, the publish script's test, is done** (close-out below). `make
+  check-akku-publish` runs `scripts/akku-publish` and the real Akku 1.2.0
+  with nothing sent. The owner asked me to publish 0.2.0, and I do once it
+  merges (ADR-0022's slice 19 revision).
 
 ## Next
 
@@ -187,9 +191,123 @@ newest first.
     now; write the akku-publish test, then publish to Akku once the
     siblings are on byte-machine 0.9" (ADR-0022, ADR-0026).
 
+19. **The publish script's test** (done, close-out below): ADR-0022
+    Decision 8's, before publishing. The owner's words are in its
+    close-out.
+20. **Publishing 0.2.0 to Akku.** From `main` on the NUC:
+    1. `env -u AKKU_PUBLISH_RELEASE_KEY sh scripts/akku-publish`, answering
+       `n`. The entry it shows must lock GitHub's URL, `v0.2.0` and the
+       commit `git ls-remote` gives for `v0.2.0^{}`;
+    2. the same, answering `y`. Its `.akku` must match the first run's, and
+       I read the archive's replies;
+    3. once the index lists 0.2.0, `akku install jsonparse` is checked in
+       an empty directory, the docs say to use it, and Pages runs by hand
+       from `main` (Decision 8).
+
 **Then:** M4, YAJL's options; and the rest of M5.
 
 ## Close-outs
+
+### Slice 19: the publish script's test (2026-11-13)
+
+- **The choice:** the owner's, on 2026-11-13.
+  - After `v0.2.0` was pushed, they said "record the tag in the ledger then
+    lets get ready to publish to akku".
+  - I listed what publishing waited for: the test, chez-httparse 0.6.0 on
+    the index, and a chez-http-server on byte-machine `^0.9.0`. They said
+    "we need to publish, and you publish it".
+  - I started with a run of `scripts/akku-publish` that answered `n`, and
+    they stopped it: "do the publish test".
+  - **The design was mine:** the key override, the manifest's location,
+    and the test's fixture.
+- **Landed:**
+  - **`tests/check-akku-publish.sh`, run by `make check-akku-publish` on
+    the host and in CI's `linux` job.** It runs the script and the real
+    Akku 1.2.0 against:
+    - a scratch GnuPG home with a default key, which a bare `gpg --sign`
+      picks, and a release key that signs with a subkey;
+    - a git config of its own, for every git command in the test. Its
+      `insteadOf` puts a scratch repository in place of the manifest's
+      location, and that repository's `main` has moved past the tag;
+    - a `curl` first on `PATH` that keeps each upload and sends nothing,
+      and a proxy that leads nowhere behind it.
+  - **Its 16 checks:**
+    - the fixture's traps: a bare `gpg --sign` takes the default key, and
+      the release key signs with its subkey;
+    - a publish: the `.key`, `.sig` and `.akku` go to the archive in that
+      order, the signature and the key file are the release key's alone,
+      and the whole entry is pinned, locked to the tag's commit at the
+      manifest's location. The script says the key isn't Kiyomi's;
+    - answering `n` signs and sends nothing, once Akku has written the
+      entry, and a run after it, over its work, publishes;
+    - a refusal at each guard: a probe signature that isn't the release
+      key's, or is two keys', a missing tag, a tag whose manifest gives
+      another version, a manifest with no version or no location, no Akku,
+      and an Akku that signs with another key, with two, or not at all;
+    - with no override, gpg is asked for the Kiyomi key, and the script
+      stops with gpg's status; with the real `Akku.manifest`, it names
+      GitHub's URL, which the git config sends to a repository with no
+      tags.
+  - **`scripts/akku-publish`:** `AKKU_PUBLISH_RELEASE_KEY` names another
+    release key, and the script says so. The repository is the manifest's
+    `(location (git URL))`.
+  - **`Akku.manifest`:** that location, GitHub's URL. Akku would otherwise
+    take the URL from `git remote get-url`, which gives a redirected one.
+  - **Records:** ADR-0022's slice 19 revision, the global constraints, and
+    CI's comments.
+- **Evidence:**
+  - **Watched fail:** against the old script, 9 of the 13 checks then
+    written failed. Case 2 first passed there too, since the old script
+    stopped before Akku asked. It now requires the entry Akku writes just
+    before its prompt.
+  - **Mutants:** 26 copies of the script, each with one guard removed or
+    changed: 17 of mine, 8 of the review's and the warning's. All 26 fail
+    the test. Two of mine had survived its first version:
+    - no `set -e`. The no-key case now requires gpg's own status, 2;
+    - no clearing of the work directory, since the test cleared it. The
+      run after an `n` now keeps the first run's work.
+  - **The real thing, answering `n`:** on the NUC, against GitHub and the
+    release key, the changed script cloned `v0.2.0` and Akku showed the
+    same entry as before the change: GitHub's URL, `v0.2.0`, `641c73d`.
+  - **The gates:** `make test` ran 40 suites and all passed, `make
+    check-akku` passed, and `make check-help` lists the new target. The
+    test takes about 5 seconds and leaves no scratch directory or
+    gpg-agent. It passes with an empty global git config, as CI has, and
+    signs no commit.
+- **Review:** an adversarial review (Opus) found:
+  - **a defect:** the fixture's own git commands read the caller's global
+    config. With none, as in CI, 8 checks failed on "unable to auto-detect
+    email address". On the NUC, whose config signs every commit, each
+    scratch commit was signed with the owner's SSH key. The test now
+    exports its own config;
+  - **gaps:**
+    - the no-key case read the line the script prints, not the key gpg
+      was asked for. It now requires gpg's "skipped" line;
+    - no case signed with two keys, so a check that took any signer list
+      holding the release key passed. A `gpg.conf` `local-user` and a
+      two-key Akku now cover it;
+    - the fixture's keys had no signing subkey, so reading the subkey's
+      fingerprint instead of the key's passed;
+    - `v0.2.0`'s publish takes Akku's other path, the clone's remote,
+      which the test can't run. Next 20's runbook checks it by hand;
+    - the override was silent. The script now says when it is set to
+      another key;
+  - **nits:** `gpgconf --kill all` for GnuPG 2.4; `mktemp` unchecked; no
+    backstop behind the `curl` stub; "clones from GitHub", "3 seconds",
+    and the ADR's scope line; gpg's trustdb noise.
+
+  All are fixed. A location in a comment, one of the review's mutants, it
+  called harmless; the fixture now has one, and the mutant fails.
+- **Known:**
+  - **The test can't run `v0.2.0`'s path.** Its manifest has no location,
+    so Akku takes the clone's remote, and a test's remote is a `file://`
+    one, which Akku refuses. The run that answered `n` showed GitHub's URL.
+  - **Publishing is Next 20.** The archive can be slow to list a release:
+    chez-httparse 0.6.0, submitted on 2026-11-11, isn't listed yet.
+  - **chez-http-server declares byte-machine `^0.8.0`,** so no project can
+    install it and jsonparse 0.2.0 together until it moves.
+  - **`CHANGELOG.md`'s 0.2.0 says the package isn't on Akku yet,** and
+    waits for chez-http-server. Once it is published, both are false.
 
 ### Slice 18: the 0.2.0 release (2026-11-13)
 

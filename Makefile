@@ -66,7 +66,7 @@ TIMEOUT ?= $(or $(shell command -v timeout 2>/dev/null),$(shell command -v gtime
 
 # One physical line: check-help reads it with awk, and fails if it ends in
 # a backslash.
-.PHONY: help check-help check-guix check-guix-inside submodules check-pins check-chez deps dev run generate test check-suites check-imports check-versions check-release check-corpora site-deps site check-site check-site-deps akku-deps check-akku check-akku-inside bench-files check-bench-files bench bench-inside bench-callbacks bench-callbacks-inside check-bench-env-inside clean
+.PHONY: help check-help check-guix check-guix-inside submodules check-pins check-chez deps dev run generate test check-suites check-imports check-versions check-release check-corpora site-deps site check-site check-site-deps akku-deps check-akku check-akku-inside check-akku-publish bench-files check-bench-files bench bench-inside bench-callbacks bench-callbacks-inside check-bench-env-inside clean
 
 .DEFAULT_GOAL := help
 
@@ -355,6 +355,14 @@ check-akku: ## (host) Install the package with Akku 1.2.0 as a consumer would, a
 
 check-akku-inside: check-chez ## Install the archives make check-akku wrote, offline, and run a consumer on Akku's library path
 	@CHEZ=$(CHEZ) sh tests/check-akku.sh install $(BUILD_DIR)/check-akku
+
+# Runs scripts/akku-publish with nothing leaving the machine
+# (tests/check-akku-publish.sh, ADR-0022 Decision 8): scratch GnuPG keys, a
+# scratch repository in place of GitHub, and a curl that keeps each upload
+# and sends nothing. It runs the real Akku 1.2.0, so `make akku-deps` first.
+check-akku-publish: ## (host) Test scripts/akku-publish with scratch keys, a scratch repository and an archive that takes nothing
+	@scripts/require-tools "$(GOAL)" git gpg gpgconf $(CHEZ)
+	@sh tests/check-akku-publish.sh
 
 # --- the benchmarks ------------------------------------------------------------
 # M3's measurements (ADR-0013, ADR-0023, ADR-0024): jsonparse against yajl

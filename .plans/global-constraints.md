@@ -330,7 +330,8 @@ record disagree, the record wins and this file gets fixed.
   `scripts/akku` (ADR-0022).
 - **A release to Akku is published with `scripts/akku-publish`,** from a
   fresh clone at the tag, signed with the Kiyomi Computation Systems release
-  key, and checked (ADR-0022).
+  key, and checked. `make check-akku-publish` tests it with nothing sent
+  (ADR-0022).
 
 ## Environment
 
