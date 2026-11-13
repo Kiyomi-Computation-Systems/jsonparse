@@ -21,6 +21,18 @@
 > process it times (jsonparse #22). So the split carries a skew of 1% to 4%
 > at the median, and decision 3's "compiled ahead of time" doesn't hold.
 
+> **Revision (2026-11-12, slice 17).** Decision 3 holds now: `make
+> bench-callbacks` times through `scripts/bench-chez` (ADR-0023). The split
+> was retaken on `main` (`20ba63b`), with the run loop and the number fast
+> path in. Leaving out `gsoc-2018`, whose turns spread widely, it gives a
+> value:
+> - byte-machine's delivery: 5.0 to 7.6 ns, against 4 to 7 below;
+> - the counting: 1.1 to 3.1 ns;
+> - jsonparse's binding: 1.2 to 2.5 ns;
+> - all of it: 7.3 to 12.8 ns, against 8.0 to 12.7 after this record's cut.
+>
+> The conclusions stand.
+
 ## Context
 
 ADR-0023 found that callbacks add 6 to 13 ns per counted value in

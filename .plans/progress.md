@@ -81,6 +81,13 @@ newest first.
     and #185.
   - **The M3 targets are still missed.** The owner chose to revisit them
     once #20 is taken, so M3 stays open.
+- **Slice 17, the bench fix, is done** (close-out below). `make bench` and
+  `make bench-callbacks` time jsonparse on compiled objects. Their timed
+  process fails the run if it compiled a library (jsonparse #22).
+  - **The report, retaken:** `records-2k` is 4.0× behind yajl and
+    `escaped-string` 4.2×.
+  - **The run loop, re-timed:** `gsoc-2018`'s 40% stands. The other files
+    move by up to 7% either way, about what code layout alone moves.
 
 ## Next
 
@@ -156,17 +163,147 @@ newest first.
         #21.
     - **The bench skew** is jsonparse #22: `make bench` and `make
       bench-callbacks` compile in the process they time.
-17. **The 0.2.0 release.** It tags `main`: byte-machine `^0.9.0`, slice 15's
+17. **The bench fix** (done, close-out below): `make bench` and `make
+    bench-callbacks` time jsonparse on compiled objects (jsonparse #22).
+    - **Earlier on 2026-11-12, the owner chose to leave it out of 0.2.0.**
+    - **Then they asked:** "if we're going to be re-running timings, should
+      we go ahead and do the make bench work to be more accurate
+      generally?"
+    - **Their go-ahead:** I recommended a slice of its own before the
+      release, and they said "start slice 17 make bench fix".
+    - **The scope was mine:** retaking the report, and re-timing the run
+      loop for the CHANGELOG.
+18. **The 0.2.0 release.** It tags `main`: byte-machine `^0.9.0`, slice 15's
     number fast path, and `read-json`'s docs. It gets a GitHub tag and the
-    docs site. The owner chose on 2026-11-12:
-    - **Akku comes later,** once two things are true:
-      - `scripts/akku-publish` has its committed test (ADR-0022);
-      - the siblings are listed on byte-machine 0.9 (ADR-0026).
-    - **#22 stays out.**
+    docs site. The owner chose on 2026-11-12 that Akku comes later, once two
+    things are true:
+    - `scripts/akku-publish` has its committed test (ADR-0022);
+    - the siblings are listed on byte-machine 0.9 (ADR-0026).
 
 **Then:** M4, YAJL's options; and the rest of M5.
 
 ## Close-outs
+
+### Slice 17: the bench fix (2026-11-12)
+
+- **The choice:** the owner's, on 2026-11-12, to fix jsonparse #22 "to be
+  more accurate generally", as its own slice before the 0.2.0 release. Next
+  17 above has their words. Retaking the report and re-timing the run loop,
+  which the CHANGELOG quotes, were my scope.
+- **Landed:**
+  - **`scripts/bench-chez STDOUT LIBDIRS PROGRAM ARG...`:**
+    - it reads PROGRAM's first datum, refuses it unless it is an import
+      form, and evaluates it in a Chez process of its own, so every
+      library it imports is compiled first. What that process names goes
+      to stderr;
+    - it then times PROGRAM, after `BENCH_PIN`;
+    - both processes start through one shell function, with the same
+      options. So the timed process keeps `--compile-imported-libraries`,
+      and a library it still had to compile is named on its stdout.
+      Without the option, Chez compiles in memory and says nothing;
+    - that stdout must be empty, or the run fails, exits 1 and shows it,
+      even when the program failed too;
+    - a failed compile times nothing.
+  - **The Makefile:** `bench-inside` and `bench-callbacks-inside` time
+    through it, and their comments say so.
+  - **`tests/test-bench-chez.sps`,** in `make test`: 14 cases, each
+    asserting the whole status, stdout and stderr:
+    - compiled first;
+    - a second run on the same objects compiles nothing;
+    - a library loaded at run time fails the run;
+    - the program's status is the script's;
+    - a failed compile stops it, with Chez's error;
+    - `BENCH_PIN` prefixes the timed process;
+    - two usage errors;
+    - the compile step's 16 compile parameters match the timed process's;
+    - any stdout fails the run, even from a program that fails;
+    - a first datum that isn't an import form is refused;
+    - each recipe's one line naming its program, under `make -n`.
+  - **Records:**
+    - revision notes in ADR-0023 to ADR-0026, and a line in ADR-0028;
+    - the global constraints and this ledger;
+    - CHANGELOG's run-loop entry, corrected.
+- **Evidence:**
+  - **`make test`:** 40 suites green, on the final code.
+  - **Watched fail:**
+    - the suite failed 8 of 8 before the script existed;
+    - 14 mutants of the final script each fail it: no compile step, its
+      output discarded, Chez's error hidden, no stdout check, a check for
+      `compiling` lines only, a check only when the program succeeds, the
+      option dropped from both processes, the option dropped from the
+      timed one, `BENCH_PIN` ignored, the status dropped, a failed compile
+      ignored, `--optimize-level 3` on the compile step,
+      `enable-cross-library-optimization` off in it, and no import-form
+      check;
+    - either recipe reverted to timing Chez directly fails it.
+  - **Smoke runs of both targets,** on the first script and the final one:
+    the compile step named 13 and 15 libraries, and the timed stdout was
+    empty.
+  - **The timings** ran on the first script. The final one adds checks but
+    starts both processes the same way.
+  - **The report, retaken on `main` (`20ba63b`):** one full run and three
+    of jsonparse and yajl alone, each compiling afresh. It is dated
+    2026-11-13, in UTC.
+    - The M3 gaps are 4.00× [3.83, 4.11] on `records-2k` and 4.24× [4.03,
+      4.42] on `escaped-string`. That is inside the two runs of 2026-11-09,
+      4.02× to 4.17× and 4.26× to 4.47×.
+    - The comparators read as ADR-0024 did, but where slice 15 moved
+      jsonparse's trees.
+    - yajl's `events` ran 0.5% to 4.5% slower than on 2026-11-09. So
+      jsonparse's change between the two reports isn't the skew alone. A
+      gap, taken within one run, cancels drift that both parsers share.
+  - **The run loop, re-timed** (ADR-0026's revision): A is `7e9a653`, B is
+    `46fca90`, three object sets each, six pairs.
+    - `gsoc-2018` takes 41.6% less time in `events` and 27.9% less in
+      `tree`.
+    - The other files move by up to 7% either way. `scan`, whose code is
+      the same in A and B, moved 5.9% on `canada` in every pair. So those
+      moves are layout-sized, and not put on the loop.
+  - **The callback split, retaken** (ADR-0025's revision), leaving out
+    `gsoc-2018`: byte-machine's delivery is 5.0 to 7.6 ns a value, and all
+    of it 7.3 to 12.8.
+- **Review:** an adversarial review (Opus) found:
+  - **two defects:**
+    - the records called `citm`'s 5.6% slowdown settled, and put `poet`'s
+      7% on the loop, though `scan`, unchanged code, moved 5.9%. The
+      CHANGELOG had both;
+    - case 5 asserted only the end of stderr, so a script that hid Chez's
+      error passed;
+  - **six gaps:**
+    - nothing checked that the compile step compiles as the timed process
+      would: `--optimize-level 3` on it passed;
+    - only Chez's `compiling` line was tested on stdout;
+    - nothing checked that the recipes use the script;
+    - ADR-0023 compared today's gaps with one 2026-11-09 run;
+    - the new rule for every timing cited no record;
+    - ADR-0025 compared with the split from before its cut;
+  - **nits:**
+    - "compiled anything" for "compiled a library";
+    - case 1 depended on argument order;
+    - ADR-0024's ordering was looser than the report;
+    - yajl's drift had no lane;
+    - the callback figures didn't say they leave out `gsoc-2018`;
+    - a long Makefile line;
+    - the owner's choice was worded beyond their words;
+    - the reports' UTC date;
+    - three script edge cases;
+    - ADR-0026's round size.
+
+  All are fixed. Each fix to the script and suite was watched fail, as
+  above.
+- **Known:**
+  - **One run is one layout draw.** Across the four compiles, jsonparse's
+    `events` rate moved by 3% to 5% on most files, 7.9% on `poet` and
+    10.2% on `escaped-string`. `make bench` still compiles once a run.
+  - **A shift tied to a variant isn't randomised** by compiling it several
+    times, so an A/B of a few percent can't be put on the change without a
+    control like `scan`.
+  - **The Chez peers' timed process doesn't keep
+    `--compile-imported-libraries`.** Their build compiles fresh objects
+    every run, so none is stale, but nothing checks it. Their results go to
+    stdout, so they can't use the script as it is.
+  - **macOS:** `--script /dev/stdin` is untested there. The owner's M1 `make
+    test` before the release will run it.
 
 ### Slice 16: M2's decision (2026-11-12)
 

@@ -286,6 +286,17 @@ record disagree, the record wins and this file gets fixed.
   same files. A split is the median of the turns' paired differences, with
   their middle half. It writes its report only when `m-count` counts what
   the events lane counts, and every lane's tally holds (ADR-0025).
+- **jsonparse is timed on compiled objects** (ADR-0023, jsonparse #22).
+  - `scripts/bench-chez` compiles a bench program's libraries in a Chez
+    process of their own, then times the program in one that only loads
+    them. Both `make bench` and `make bench-callbacks` run through it.
+  - Both processes start with the same options. So the timed process keeps
+    `--compile-imported-libraries`, and a library it still compiled is
+    named on its stdout. That stdout must be empty, or the run fails.
+  - `tests/test-bench-chez.sps` holds the script and both recipes in `make
+    test`.
+  - A timing outside these targets follows the same method: compile
+    first, then check stdout or the objects' times (ADR-0023).
 - **Comparators not in Guix are fetched on the host,** pinned by sha256 in
   `bench/comparators.lock`, never committed, and on a Guix host run only in
   the container (ADR-0024).

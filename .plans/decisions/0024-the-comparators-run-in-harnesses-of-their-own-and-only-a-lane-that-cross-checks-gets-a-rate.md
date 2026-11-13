@@ -14,6 +14,18 @@
 > (jsonparse #22), so jsonparse's figures carry a skew of 1% to 4% at the
 > median, and the comparators' don't.
 
+> **Revision (2026-11-12, slice 17).** jsonparse is now compiled ahead of
+> time too, by `scripts/bench-chez` (ADR-0023). The report retaken on
+> `main` (`20ba63b`), one run, mostly reads as this record did:
+> - **events:** every event parser but SRFI 180 is ahead of jsonparse.
+> - **tree:** Chibi is faster on every file. Gambit is faster on
+>   `ints-40k` (1.24×), `poet` (1.11×) and `records-2k` (1.07×), and
+>   within 3% on `escaped-string`.
+> - **tree+walk:** Chibi is ahead on `canada`, `escaped-string` and
+>   `gsoc-2018`. It isn't ahead on `ints-40k` any more, where slice 15's
+>   number fast path moved jsonparse ahead (ADR-0027). Gambit is ahead
+>   only on `ints-40k`.
+
 ## Context
 
 ADR-0013 chose the comparators, and ADR-0023 built `make bench` for

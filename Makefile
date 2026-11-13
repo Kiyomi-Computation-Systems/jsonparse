@@ -373,7 +373,11 @@ check-akku-inside: check-chez ## Install the archives make check-akku wrote, off
 # BENCH_LOCK and BENCH_DEST set here. It builds yajl's harness,
 # bench/yajl-bench.c, with BENCH_CFLAGS, then each comparator's.
 # jsonparse's libraries, byte-machine's runtime and the harness are compiled
-# ahead of time into a fresh $(BENCH_OBJ), at Chez's default optimize level.
+# ahead of time into a fresh $(BENCH_OBJ), at Chez's default optimize level,
+# in a Chez process of their own. scripts/bench-chez does that, then times
+# bench/run.sps in a process that only loads them. It fails the run if that
+# process compiled a library after all: a process that compiled its
+# libraries times differently (jsonparse #22).
 # Every harness runs pinned by taskset to BENCH_CPU, scripts/bench-cpu's
 # fastest core, unless it is empty, as on macOS. The report,
 # build/bench/report.md, replaces the last one only if the harnesses'
@@ -537,7 +541,7 @@ bench-inside: check-chez ## Write M0's files, check every file's and comparator'
 	  printf '))\n'; } > $(BENCH_DIR)/plan.scm
 	@$(BENCH_PIN) $(BENCH_DIR)/yajl-bench $(BENCH_ROUNDS) $(BENCH_ROUND_BYTES) $(BENCH_FILES) > $(BENCH_DIR)/yajl.scm
 	@rm -rf $(BENCH_OBJ)
-	@$(BENCH_PIN) $(CHEZ) --libdirs "$(BENCH_LIBDIRS)" --compile-imported-libraries --program bench/run.sps \
+	@BENCH_PIN='$(BENCH_PIN)' sh scripts/bench-chez $(BENCH_DIR)/jsonparse-stdout.txt "$(BENCH_LIBDIRS)" bench/run.sps \
 	  $(BENCH_DIR)/jsonparse.scm $(BENCH_ROUNDS) $(BENCH_ROUND_BYTES) $(BENCH_FILES)
 	@$(foreach p,$(BENCH_PARSERS),echo "bench: timing $(p)" >&2 && \
 	  $(BENCH_PIN) $(BENCH_RUN_$(p)) $(BENCH_ROUNDS) $(call bench-round-bytes,$(p)) $(BENCH_FILES) > $(BENCH_DIR)/$(p).scm && ) true
@@ -550,9 +554,10 @@ bench-inside: check-chez ## Write M0's files, check every file's and comparator'
 
 # Where the callback path's time goes (ADR-0025): (jsonparse-bench
 # callbacks)'s eight lanes on the same files, by the same method, the lanes
-# taking turns, pinned and compiled ahead of time as bench-inside compiles
-# jsonparse, into objects of its own. It times no comparator, so it fetches
-# only the files, but it enters the same container, for taskset.
+# taking turns, pinned, and compiled ahead of time by scripts/bench-chez,
+# as bench-inside compiles jsonparse, into objects of its own. It times no
+# comparator, so it fetches only the files, but it enters the same
+# container, for taskset.
 # bench/callbacks.sps checks m-count's counts against the events lane's, and
 # every lane's tally, before it writes build/bench/callbacks.md.
 BENCH_CALLBACKS_OBJ     := $(BENCH_DIR)/callbacks-obj
@@ -574,7 +579,7 @@ bench-callbacks-inside: check-chez ## Write M0's files, check every file's sha25
 	@$(BENCH_FETCH) --check
 	@sh scripts/bench-machine $(BENCH_CPU) > $(BENCH_DIR)/callbacks-machine.txt
 	@rm -rf $(BENCH_CALLBACKS_OBJ)
-	@$(BENCH_PIN) $(CHEZ) --libdirs "$(BENCH_CALLBACKS_LIBDIRS)" --compile-imported-libraries --program bench/callbacks.sps \
+	@BENCH_PIN='$(BENCH_PIN)' sh scripts/bench-chez $(BENCH_DIR)/callbacks-stdout.txt "$(BENCH_CALLBACKS_LIBDIRS)" bench/callbacks.sps \
 	  $(BENCH_DIR)/callbacks.md $(BENCH_DIR)/callbacks-machine.txt $(BENCH_ROUNDS) $(BENCH_ROUND_BYTES) $(BENCH_FILES)
 	@cat $(BENCH_DIR)/callbacks.md
 
