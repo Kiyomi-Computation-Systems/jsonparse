@@ -25,6 +25,26 @@
 >   one file and lane. So the context's premise doesn't hold either: such a
 >   process times differently in every round, not just the first.
 
+> **Revision (2026-11-12, slice 17).** Decision 6 holds now (jsonparse #22).
+>
+> - **How:** `make bench` and `make bench-callbacks` time through
+>   `scripts/bench-chez`. It compiles a program's libraries in a Chez
+>   process of their own, then times the program in one that only loads
+>   them. Both processes start with the same options. The timed process
+>   keeps `--compile-imported-libraries`, and fails the run if its stdout,
+>   where Chez names each library it compiles, isn't empty.
+>   `tests/test-bench-chez.sps` holds the script and both recipes.
+> - **The rule for every timing,** not just these targets: compile in a
+>   process of its own, then check the timed process compiled nothing, from
+>   its stdout or the objects' times.
+> - **The report, retaken on `main` (`20ba63b`):** four runs, each
+>   compiling afresh, dated 2026-11-13 in UTC.
+>   - The M3 gaps are 4.00× [3.83, 4.11] on `records-2k` and 4.24× [4.03,
+>     4.42] on `escaped-string`, against 2× and 4×. Neither target is met.
+>   - The two runs of 2026-11-09 had 4.02× and 4.17×, and 4.26× and 4.47×.
+>     So today's gaps are inside that spread, with slice 15 landed between,
+>     which doesn't run in `events`.
+
 ## Context
 
 M3 starts by measuring (plan M3, lever 1). ADR-0013 chose the comparators,

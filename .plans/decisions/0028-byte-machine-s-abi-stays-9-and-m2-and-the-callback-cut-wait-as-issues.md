@@ -151,3 +151,6 @@ M look 7% faster on a file with one value inside a container.
   and by up to 22% for one file and lane. It is jsonparse #22.
   - These figures avoid it.
   - Slices 13 and 14's figures carry it (ADR-0025, ADR-0026).
+
+  Slice 17 fixed it. Both targets now time through `scripts/bench-chez`,
+  and ADR-0023 to ADR-0026 carry the retaken figures.

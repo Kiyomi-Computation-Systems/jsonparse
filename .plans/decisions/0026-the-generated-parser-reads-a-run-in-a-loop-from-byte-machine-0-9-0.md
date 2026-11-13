@@ -19,6 +19,44 @@
 > objects and put it at 8.5% off `records-2k`'s `events` time, and 12.5%
 > off `parse`.
 
+> **Revision (2026-11-12, slice 17).** The run loop, re-timed on compiled
+> objects:
+> - **A and B:** A is the code just before this record (`7e9a653`,
+>   byte-machine 0.8.0); B is this record's (`46fca90`).
+> - **Method:**
+>   - three object sets per variant, each compiled in a process of its own;
+>   - two runs per variant per set, taking turns, through
+>     `scripts/bench-chez`;
+>   - `bench/run.sps` at 9 rounds of 10 MB, where `make bench` reads 20.
+>
+>   Each figure is B's time saved against the A run beside it, median
+>   [least, most] over six pairs.
+>
+> | File | `events` | `parse` | `tree` |
+> |:--|--:|--:|--:|
+> | gsoc-2018 | 41.6% [41.0, 43.4] | 44.4% [43.2, 45.8] | 27.9% [27.1, 29.1] |
+> | poet | 7.0% [4.0, 10.9] | 8.0% [4.1, 10.0] | 4.3% [−2.7, 10.0] |
+> | twitter | 4.5% [3.2, 5.2] | 6.2% [5.7, 7.0] | 2.7% [1.0, 4.6] |
+> | canada | 2.1% [0.6, 6.5] | 1.9% [0.3, 2.9] | 0.2% [−0.8, 0.7] |
+> | escaped-string | 1.7% [−0.8, 6.6] | 8.0% [4.7, 8.6] | 0.0% [−2.0, 3.4] |
+> | ints-40k | −0.1% [−1.1, 2.8] | 1.4% [−0.5, 5.1] | −0.6% [−1.9, 2.0] |
+> | records-2k | −2.5% [−3.4, −2.1] | −0.9% [−5.5, −0.3] | −1.7% [−3.1, 0.4] |
+> | citm | −5.6% [−6.0, −5.2] | −7.5% [−7.8, −5.7] | −1.8% [−2.4, −1.3] |
+>
+> - **`gsoc-2018`'s 40% stands.**
+> - **The other files' moves can't be put on the loop.**
+>   - **The control:** `scan` runs the harness's own code, the same in A
+>     and B. Yet on `canada` it took 5.9% [4.1, 21.2] more time in B, in
+>     every pair and every object set.
+>   - **Why the object sets don't settle it:** they vary what each
+>     compile lays out. They don't vary the shift that B's larger generated
+>     parser, about 9 KB more, gives everything loaded after it.
+>   - **So these are layout-sized:** `citm`'s 5.6% more time in `events`,
+>     `records-2k`'s 2.5% more, and `poet`'s 7.0% less. They may be the
+>     loop's own work, or the shift. The bar below for settling `citm`
+>     still stands: Vr over more turns, or a way to measure layout's
+>     part.
+
 ## Context
 
 **Plan M3's lever 2 was a run node:** a new node kind, so a decision record

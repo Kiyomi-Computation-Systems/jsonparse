@@ -1,0 +1,69 @@
+#!/bin/sh
+# scripts/bench-chez STDOUT LIBDIRS PROGRAM [ARG...]: runs the Chez
+# benchmark program PROGRAM with ARGs, timed on compiled objects (ADR-0023,
+# jsonparse #22). make bench and make bench-callbacks time jsonparse
+# through it. A Chez process that compiled its libraries times them
+# differently from one that loads their objects, so:
+#
+#   1. PROGRAM's import form, its first datum, is read and evaluated in a
+#      Chez process of its own. That compiles every library it imports into
+#      the objdir LIBDIRS pairs with its source directory. What that process
+#      names goes to stderr;
+#   2. PROGRAM then runs, after BENCH_PIN when it is set (taskset -c N);
+#   3. both processes start through chez below, with the same options. So
+#      the timed process keeps --compile-imported-libraries, and a library
+#      it still had to compile is named on its stdout. Without the option,
+#      Chez would compile the library in memory and say nothing;
+#   4. that stdout goes to the file STDOUT, and must be empty. PROGRAM writes
+#      its results to a file of its own, and its progress to stderr.
+#
+# CHEZ names Chez. The exit status is PROGRAM's. It is 1 if the compile
+# fails, in which case nothing is timed, or if the timed process wrote to
+# stdout, and 2 on a usage error.
+set -u
+if [ $# -lt 3 ]; then
+  echo "usage: bench-chez STDOUT LIBDIRS PROGRAM [ARG...]" >&2
+  exit 2
+fi
+if [ -z "${CHEZ:-}" ]; then
+  echo "bench-chez: CHEZ names no Chez" >&2
+  exit 2
+fi
+stdout=$1
+libdirs=$2
+program=$3
+shift 3
+
+# chez PIN ARG...: Chez with ARGs, after the command PIN when it isn't
+# empty. PIN is split into words, with globbing off.
+chez() {
+  pin=$1
+  shift
+  set -f
+  # shellcheck disable=SC2086
+  $pin "$CHEZ" --libdirs "$libdirs" --compile-imported-libraries "$@"
+  rc=$?
+  set +f
+  return $rc
+}
+
+chez "" -q --script /dev/stdin "$program" >&2 <<'EOF' || {
+(let ((form (call-with-input-file (cadr (command-line)) read)))
+  (unless (and (pair? form) (eq? (car form) 'import))
+    (display "bench-chez: the program's first datum is not an import form\n"
+             (current-error-port))
+    (exit 1))
+  (eval form))
+EOF
+  echo "bench-chez: compiling $program's libraries failed, so nothing was timed" >&2
+  exit 1
+}
+
+status=0
+chez "${BENCH_PIN:-}" --program "$program" "$@" >"$stdout" || status=$?
+if [ -s "$stdout" ]; then
+  echo "bench-chez: the timed process wrote to stdout, where Chez names each library it compiles, so the run doesn't count:" >&2
+  cat "$stdout" >&2
+  exit 1
+fi
+exit "$status"
