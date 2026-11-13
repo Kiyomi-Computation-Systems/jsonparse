@@ -273,6 +273,17 @@ events-only mode (decision 0040's audit method); documented API.
 
 ### M2 — byte-machine: nesting as a verified primitive (option 3) — conditional
 
+**Revised 2026-11-12 (ADR-0028): not taken for now.**
+
+- **Measured on today's code:** the stack in the machine took 11.8% off
+  `records-2k`'s `events` time: 8 to 10 ns a value inside a container on
+  `records-2k` and `ints-40k`.
+- **The owner chose to keep byte-machine's ABI at 9 for now,** so the stack
+  stays in jsonparse.
+- **It waits as two issues:** jsonparse #21 lists jsonparse's work, and
+  byte-machine #185 byte-machine's. If both it and the callback cut
+  (byte-machine #184) are taken, they share one ABI bump.
+
 **Revised 2026-10-30 (ADR-0004).**
 
 - **It is taken only if** the measured gain still justifies a runtime ABI bump
@@ -376,6 +387,19 @@ them:
    42. It would add work to every number in `events`, change the handler,
    and do nothing for decimals.
 
+**After the levers: the callback cut, not taken for now (ADR-0028).**
+
+- **What it is:** ADR-0025 found byte-machine's callback step and span
+  delivery the larger part of the callback path. Inlining them in the
+  emitted code needs ABI 10.
+- **What it saves:** a probe of it took 8.5% off `records-2k`'s `events`
+  time.
+- **Why it waits:** the owner chose on 2026-11-12 to keep ABI 9 for now.
+  It waits as jsonparse #20 and byte-machine #184.
+- **The targets:** neither is met. With M2 too, the probe put the gaps at
+  3.34× and 4.44×. The owner chose on 2026-11-12 to revisit them
+  once #20 is taken (ADR-0023). M3 stays open until then.
+
 **Exit criteria:**
 
 - events-only throughput within **2×** of YAJL on `records-2k`, and within **4×**
@@ -420,7 +444,7 @@ it is built.
 | M2 is not taken, so the stack stays in jsonparse | Nothing breaks: the stack is internal and the API is the same either way (ADR-0004). Its mutation tests stand in for the verifier. |
 | The run node (M3) doesn't close the string gap enough | Ship anyway. 130 MB/s is already more than 280× chez-json on escaped strings. Unsafe ops are closed while ADR-0003 stands. |
 | The callback per value dominates object-heavy input | Measured on 2026-10-30: about 8 ns per value, 11–24% of events-only time and 4–7% of a tree parse (ADR-0004). M2 removes it, if taken. |
-| A byte-machine ABI bump strands the sibling consumers in one application | ABI changes ship with the siblings' regenerated parsers, and M2 and M3 share one bump (ADR-0002, ADR-0004). |
+| A byte-machine ABI bump strands the sibling consumers in one application | ABI changes ship with the siblings' regenerated parsers. M2 and the callback cut would share one bump, and neither is taken for now (ADR-0002, ADR-0028). |
 | A long number takes seconds to convert: the cost grows with the square of its digits (78 s for a million-digit integer) | A digit limit, default 1,000. At that limit a megabyte converts in about 116 ms (ADR-0011). |
 | Generated-code size grows with options (each option duplicates sub-machines) | Track `generated-source-size-bytes`, as byte-machine's baseline already does. Prefer branch gates over duplicated states. |
 | The Chez 9.5.8 numbers mislead | Re-measure on the supported floor first (M3 step 1) before setting targets in stone. |

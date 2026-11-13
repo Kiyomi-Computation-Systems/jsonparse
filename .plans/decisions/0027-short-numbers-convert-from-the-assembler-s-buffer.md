@@ -6,6 +6,12 @@
   `exact` modes; plan M3's lever 4
 - **Related:** ADR-0011, ADR-0016, ADR-0023; plan M3
 
+> **Revision (2026-11-12, slice 16).** Run 1 of every rotation below
+> compiled its libraries in the process it then timed, and such a process
+> times differently (slice 16's probe). Runs 2 to 6 loaded compiled
+> objects, and put the gains lower than run 1 did. The final code's figures are corrected below; the probe's
+> run 1 compiled too.
+
 ## Context
 
 - **Numbers dominate `tree` on number files.** In the report of
@@ -97,7 +103,7 @@ of `src/` (scratch, under `build/`); main's `src/` was the baseline.
 - **`tree`, main against the probe, taking turns twice** (`bench/run.sps`,
   9 rounds of 10 MB, medians):
 
-  | File | Gain, run 1 | Gain, run 2 |
+  | File | Gain, run 1 (compiled in the run) | Gain, run 2 |
   |:--|--:|--:|
   | `ints-40k` | +38.0% | +32.5% |
   | `canada` | +33.7% | +31.8% |
@@ -108,11 +114,16 @@ of `src/` (scratch, under `build/`); main's `src/` was the baseline.
   lane never runs. Without the 16-to-18-digit path, `canada` was 4.7% to
   9.4% slower than main: 100,717 of its 111,080 decimals have 17 digits,
   so each was scanned and then taken the long way.
-- **The final code against main,** after the review's fixes, timed the
-  same way: `tree` took 21% to 30% less time on `ints-40k` and `canada`
-  (rates +26.5% to +42.0%), 10% to 15% on `citm_catalog`, 9% to 10% on
-  `records-2k` and 4% to 5% on `twitter`. `events`' rate moved −5.5% to
-  +5.7%, in code it doesn't run.
+- **The final code against main,** after the review's fixes, in five
+  rotations that loaded compiled objects (runs 2 to 6):
+  - `tree` took 23% to 25% less time on `ints-40k` (rates +29.9% to
+    +32.7%), 21% to 22% on `canada`, 6% to 10% on `citm_catalog`, 9% on
+    `records-2k` and 3% to 4% on `twitter`;
+  - `events`' rate moved −5.5% to +3.7%, in code it doesn't run: the
+    events lane never reaches the assembler.
+
+  Run 1, which compiled its libraries in the timed process, had put
+  `ints-40k` at 30% and `canada` at 28%.
 - **The assembler alone, per number** (5 rounds, twice):
 
   | Numbers | main | probe | copy and count alone |

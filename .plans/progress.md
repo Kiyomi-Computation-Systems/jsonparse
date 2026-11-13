@@ -73,7 +73,14 @@ newest first.
 - **Slice 15, the number fast path, is done** (close-out below). A short
   number converts straight from the assembler's buffer, not through the
   grammar as the plan's lever 4 had it (ADR-0027). `tree` takes 21% to
-  30% less time on `ints-40k` and `canada`, and neither M3 target moves.
+  25% less time on `ints-40k` and `canada`, and neither M3 target moves.
+- **Slice 16, M2's decision, is done** (close-out below). A probe measured
+  M2 and the callback cut on today's code. The owner chose on 2026-11-12 to
+  keep byte-machine's ABI at 9 for now, so neither is built (ADR-0028).
+  - **Both wait as issues:** jsonparse #20 and #21, and byte-machine #184
+    and #185.
+  - **The M3 targets are still missed.** The owner chose to revisit them
+    once #20 is taken, so M3 stays open.
 
 ## Next
 
@@ -140,17 +147,133 @@ newest first.
     built in the assembler instead of the grammar. Integers of up to 18
     digits, and in `flonum` mode decimals of up to 18 digits with e within
     ±22, convert from its buffer (ADR-0027).
-16. **M2's decision,** measured (ADR-0004), before the callback cut, so that
-    one ABI bump carries both.
-17. **The callback step and span delivery inlined** in byte-machine: ABI 9 to
-    10, with M2 if it is taken, and the sibling consumers' parsers
-    regenerated (ADR-0002, ADR-0025, ADR-0026). Its prototype took 12% to 13%
-    off `records-2k`. Then the M3 targets are revisited with the owner, if
-    they are still missed (ADR-0023).
+16. **M2's decision** (done, close-out below): not taken for now, and
+    neither is the callback cut. byte-machine's ABI stays 9 (ADR-0028).
+    - **The issues:** each holds its probe's figures and work list.
+      - The callback cut is byte-machine #184; adopting it is jsonparse
+        #20.
+      - The stack primitive is byte-machine #185; M2 itself is jsonparse
+        #21.
+    - **The bench skew** is jsonparse #22: `make bench` and `make
+      bench-callbacks` compile in the process they time.
+17. **The 0.2.0 release.** It tags `main`: byte-machine `^0.9.0`, slice 15's
+    number fast path, and `read-json`'s docs. It gets a GitHub tag and the
+    docs site. The owner chose on 2026-11-12:
+    - **Akku comes later,** once two things are true:
+      - `scripts/akku-publish` has its committed test (ADR-0022);
+      - the siblings are listed on byte-machine 0.9 (ADR-0026).
+    - **#22 stays out.**
 
 **Then:** M4, YAJL's options; and the rest of M5.
 
 ## Close-outs
+
+### Slice 16: M2's decision (2026-11-12)
+
+- **The choice:** the owner's, on 2026-11-12. byte-machine's ABI stays 9
+  for now, so neither M2 nor the callback cut, the ledger's slice 17, is
+  built (ADR-0028). The steps there:
+  - the owner first chose to measure how the two changes overlap;
+  - then asked what these changes would mean for byte-machine. I set it out
+    from byte-machine's source and its past decisions 0047 and 0059.
+- **Landed,** records and issues only:
+  - **Issues:**
+    - byte-machine #184 (the callback cut) and #185 (the stack primitive);
+    - jsonparse #20 (adopting the cut) and #21 (M2);
+    - jsonparse #22 (`make bench` and `make bench-callbacks` compile in the
+      process they time);
+    - a `performance` label in both repositories.
+  - **Records:**
+    - ADR-0028;
+    - revision notes in ADR-0004 and ADR-0023 to ADR-0026;
+    - the plan's M2, M3 and risks, the global constraints, and this
+      ledger.
+  - **Slice 15's figures, corrected:** its run 1 compiled in the timed
+    process. The fix is in ADR-0027's revision, its close-out and
+    CHANGELOG.
+- **Evidence:** a probe (Opus) in `build/probe16/`, which git ignores.
+  - **Variants:** A (`main`), M (the stack in the machine, by hand), P
+    (the callback cut, by script) and MP (both).
+  - **Timing:** taking turns, pinned to CPU 7, every file and lane, each
+    variant compiled in a process of its own.
+    - The figures are rotations 5 to 12. The probe set rotations 1 to 3
+      aside, reporting that they partly ran beside a busy core.
+    - Three more object sets per variant were timed once each.
+      - On `records-2k` and `ints-40k`, their medians were within about 2
+        points of rotations 5 to 12's.
+      - On `escaped-string`, A's set in the rotations was a slow draw, so
+        its figures come from all four sets.
+  - **Correctness:**
+    - **Suites:** they ran on a harness the probe adapted for M, which
+      expects no `context` calls.
+      - Only the suites pinning what a variant changed failed, plus
+        `test-machine` and `test-machine-driver`, which fail for A there
+        too.
+      - On the plain harness, M failed 14 suites.
+    - **Hand-written cases:** identical to A's, standing in for those two
+      suites' nesting and depth-limit cases.
+    - **Mutants:** three stack mutants each failed 12 to 23 suites beyond
+      M's own five.
+  - **My checks:**
+    - I recomputed the medians from the result files;
+    - I compared the case outputs with `cmp`;
+    - I read byte-machine's source for the impact list, at v0.9.0
+      (`fdd4da0`).
+  - **The compile-in-process skew,** which the probe found, I measured on
+    the same objects: run 1 compiled in the timed process, and later runs
+    loaded what it compiled.
+    - Slice 15's runs: 2.2% and 3.7% off at the median, at most 21.6%.
+    - The probe's: 4.3% and 1.2%, at most 20.7%.
+- **Review:** an adversarial review (Opus) of these records and the five
+  issues found:
+  - **defects:**
+    - `escaped-string`'s figures came from A's slow object set, quoted in
+      six places. The 4.73× gap is 4.42× over the four sets;
+    - ADR-0028 had "if either is taken, both ship", beyond the owner's
+      words;
+    - the close-out said only suites pinning a change failed, though two
+      failed for A too;
+    - #21 named conformance as a suite a wrong stack must fail, and one
+      mutant passed it;
+    - the "no `compiling` line" check read stderr, where Chez never writes
+      it. Object files' times show the conclusion holds;
+    - #22's probe table mixed the compile with a layout draw;
+    - #22 put the layout draw at up to 10%, where it reaches 20%;
+    - ADR-0027 said five *more* rotations;
+    - #184 missed slot 14 among those its code reads;
+    - MP's slowdown on `escaped-string` was called unestablished, though
+      it held in every rotation and set;
+    - the close-out said the M3 gaps carry the compile skew, though they
+      take only yajl's rate from the report;
+  - **gaps:**
+    - the adapted harness, unrecorded;
+    - the M3 revisit's timing, put on #20 without the owner, and no next
+      slice in Next;
+    - the mutant counts included M's own failures;
+    - #185 hid how the prototype stored its stack;
+    - #20 and #21 didn't name the records they would overturn;
+    - #21's file list missed what must stay and what else goes;
+    - #20's timing step didn't warn of the layout draw;
+    - "the two add up" overstated `ints-40k`, `twitter` and
+      `citm_catalog`;
+    - ADR-0024 to ADR-0026 had no note that their figures carry the
+      compile skew;
+    - the M3 gaps had no hedge;
+  - **five nits.**
+
+  All are fixed.
+- **Known:**
+  - **Neither M3 target is met:** `records-2k` is 4.15× behind yajl and
+    `escaped-string` 4.42×. Both changes together would leave them at
+    3.34× and 4.44×. The owner chose to revisit the targets once #20 is
+    taken.
+  - **The probe ran on amd64 only.**
+  - **`escaped-string` ran 2% to 4% slower in MP than in P,** in every
+    rotation and object set. Why isn't known.
+  - **Figures from `make bench`, `make bench-callbacks` and slice 14's runs
+    carry the compile skew** until #22 is fixed. That includes ADR-0025's
+    split and ADR-0026's gains. The CHANGELOG's "about 40%" for the run
+    loop came from slice 14's runs too.
 
 ### Slice 15: the number fast path (2026-11-11)
 
@@ -207,12 +330,14 @@ newest first.
       `2e+3` and `1.23456789012345e36` joined the allocation list;
     - the review's two zero mutants survived until zeros joined it too. I
       reran both against the final code.
-  - **Timing,** main against the final code, taking turns twice, pinned to
-    CPU 7:
-    - `tree` took 21% to 30% less time on `ints-40k` and `canada`, 10% to
-      15% on `citm_catalog`, 9% to 10% on `records-2k`, and 4% to 5% on
-      `twitter`;
-    - `events`' rate moved −5.5% to +5.7%, in code it doesn't run.
+  - **Timing,** main against the final code, taking turns, pinned to CPU
+    7. Corrected on 2026-11-12: run 1 compiled its libraries in the timed
+    process, which skews it (slice 16's probe), so these are runs 2 to 6,
+    which loaded compiled objects:
+    - `tree` took 23% to 25% less time on `ints-40k`, 21% to 22% on
+      `canada`, 6% to 10% on `citm_catalog`, 9% on `records-2k`, and 3% to
+      4% on `twitter`. Run 1 had put `ints-40k` at 30%;
+    - `events`' rate moved −5.5% to +3.7%, in code it doesn't run.
 - **Review:** an adversarial review (Opus) found:
   - **one defect:** in `exact` mode, the fast path trusted the digit count
     `json-assembler-number-chars!` keeps. `json-assembler-chars!` and
@@ -242,8 +367,8 @@ newest first.
     `inexact`. Eisel and Lemire's algorithm might go lower; it is
     unmeasured (ADR-0027).
   - **The 16-to-18-digit allocation check has a margin of 48 bytes**
-    (208 to 240 against 288), measured only on amd64. CI's arm64 run is
-    the first look there.
+    (208 to 240 against 288). It holds on amd64 and on CI's arm64
+    (`tarm64le`, run 43196603200); the M1 laptop hasn't run it.
   - **Neither M3 target moves:** the fast path doesn't run in `events`.
 
 ### Issue 17: `read-json` on a port whose bytes are still coming (2026-11-10)

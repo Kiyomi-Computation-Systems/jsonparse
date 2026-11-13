@@ -42,6 +42,9 @@ record disagree, the record wins and this file gets fixed.
   - The gitlink, the floor and `Akku.lock` move together (ADR-0002).
 - **A change that needs a new byte-machine ABI** ships with the sibling
   consumers' regenerated parsers (ADR-0002).
+- **byte-machine's ABI stays 9 for now** (ADR-0028). The owner chose on
+  2026-11-12 not to change it. Work that needs ABI 10 waits as issues:
+  byte-machine #184 and #185.
 - **A byte-machine release that changes only the emitted text,** with the
   ABI the same, is taken by moving the gitlink, tag, floor and lock together
   and regenerating. Every other consumer keeps working without regenerating.
