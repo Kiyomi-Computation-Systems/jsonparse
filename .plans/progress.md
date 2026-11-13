@@ -93,8 +93,8 @@ newest first.
   byte-machine `^0.9.0`, the number fast path and `read-json`'s docs, with
   0.1.0's API. The owner's first `make test` on the M1 found
   `scripts/bench-chez` broken on macOS. After the fix the second passed
-  all 40 suites. The tag follows the merge. Akku waits (ADR-0022's
-  revision).
+  all 40 suites. `v0.2.0` was tagged on 2026-11-13, on `641c73d`, and the
+  site deployed. Akku waits (ADR-0022's revision).
 
 ## Next
 
@@ -325,14 +325,17 @@ newest first.
       bytes: `string-alloc` passed on both runs;
     - slice 17's `--script /dev/stdin` in `scripts/bench-chez`:
       `test-bench-chez` passed on the second run.
-  - **The tag, after the merge, on the same day as the CHANGELOG's date:**
-    - the date is local, −0500, as `v0.1.0`'s was;
-    - if the merge slips past 2026-11-13, the date moves in the PR before
-      it merges;
-    - the tag is `git tag -s -u CC2923E50902E936049B696B9EBA259B8EAC5130
-      v0.2.0` on the squash-merge commit, annotated, then `git tag -v
-      v0.2.0`, then pushed. I make it from the NUC once the owner says so;
-    - `pages.yml` deploys the site on it.
+  - **The tag:**
+    - the squash merge is `0cfff53`, on 2026-11-13. Before the tag, the
+      owner edited `Akku.manifest`'s synopsis and description. Their
+      commit reached GitHub on the deleted branch, and went onto `main` as
+      `641c73d`. `make test`, `make check-akku` and CI passed on it;
+    - `v0.2.0` is on `641c73d`, annotated and signed with
+      `CC2923E50902E936049B696B9EBA259B8EAC5130`, at 2026-11-13 08:52
+      −0500, the CHANGELOG's date. `git tag -v` passed, and I pushed it
+      from the NUC when the owner said "push the v0.2.0 tag";
+    - `pages.yml` deployed the site on it (run 43437951592), and the live
+      Status reads v0.2.0.
   - **Akku waits** for `scripts/akku-publish`'s test and the siblings on
     byte-machine 0.9 (ADR-0022's revision).
   - **No check holds the version rule.** `make check-release` holds one
