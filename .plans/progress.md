@@ -92,8 +92,8 @@ newest first.
   `Akku.manifest`, `CHANGELOG.md` and the Status name 0.2.0:
   byte-machine `^0.9.0`, the number fast path and `read-json`'s docs, with
   0.1.0's API. The owner's first `make test` on the M1 found
-  `scripts/bench-chez` broken on macOS, and it is fixed. A second M1 run
-  comes before the merge, and the tag follows it. Akku waits (ADR-0022's
+  `scripts/bench-chez` broken on macOS. After the fix the second passed
+  all 40 suites. The tag follows the merge. Akku waits (ADR-0022's
   revision).
 
 ## Next
@@ -275,6 +275,8 @@ newest first.
     not found".
   - **Case 12 watched fail on Linux** with the same line, then pass after
     the rename. `make test` then ran 40 suites, and all passed.
+  - **The owner's second M1 `make test`,** on `d32f61b`: 40 suites, all
+    passed, `bench-chez` 15 of them. CI passed on `d32f61b` too.
   - **The gates, on the final files:**
     - `make test` ran 40 suites, and all passed. Its `check-release` read
       0.2.0 in all three places;
@@ -318,11 +320,11 @@ newest first.
     floor CI builds on both arches, and the M1 run adds macOS;
   - "soon with Akku" in the docs is still true.
 - **Known:**
-  - **The M1 laptop, before the merge:**
-    - the first run settled slice 15's 16-to-18-digit allocation check,
-      whose margin is 48 bytes: `string-alloc` passed;
-    - a second run must pass `test-bench-chez`, which also settles slice
-      17's `--script /dev/stdin` on macOS. No run there has reached it yet.
+  - **The M1 laptop settled two open items:**
+    - slice 15's 16-to-18-digit allocation check, whose margin is 48
+      bytes: `string-alloc` passed on both runs;
+    - slice 17's `--script /dev/stdin` in `scripts/bench-chez`:
+      `test-bench-chez` passed on the second run.
   - **The tag, after the merge, on the same day as the CHANGELOG's date:**
     - the date is local, −0500, as `v0.1.0`'s was;
     - if the merge slips past 2026-11-13, the date moves in the PR before
