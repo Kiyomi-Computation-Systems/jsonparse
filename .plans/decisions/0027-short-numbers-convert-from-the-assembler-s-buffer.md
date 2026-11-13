@@ -12,6 +12,14 @@
 > objects, and put the gains lower than run 1 did. The final code's figures are corrected below; the probe's
 > run 1 compiled too.
 
+> **Revision (2026-11-13, slice 18).** The CHANGELOG no longer gives the
+> 6% to 10% on `citm_catalog` or the 9% on `records-2k` below. In the same
+> runs, `events`, which never reaches the assembler, moved by up to 5.5%.
+> Runs 2 to 6 loaded the objects run 1 compiled, so a shift in code layout
+> is not averaged out. A gain near a control's move is not put on the
+> change (ADR-0026's slice 17 revision). The 21% to 25% on `ints-40k` and
+> `canada` stand.
+
 ## Context
 
 - **Numbers dominate `tree` on number files.** In the report of

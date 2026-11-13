@@ -10,7 +10,7 @@
 #      the objdir LIBDIRS pairs with its source directory. What that process
 #      names goes to stderr;
 #   2. PROGRAM then runs, after BENCH_PIN when it is set (taskset -c N);
-#   3. both processes start through chez below, with the same options. So
+#   3. both processes start through run_chez below, with the same options. So
 #      the timed process keeps --compile-imported-libraries, and a library
 #      it still had to compile is named on its stdout. Without the option,
 #      Chez would compile the library in memory and say nothing;
@@ -34,9 +34,10 @@ libdirs=$2
 program=$3
 shift 3
 
-# chez PIN ARG...: Chez with ARGs, after the command PIN when it isn't
-# empty. PIN is split into words, with globbing off.
-chez() {
+# run_chez PIN ARG...: Chez with ARGs, after the command PIN when it isn't
+# empty. PIN is split into words, with globbing off. It isn't named chez: a
+# function hides the command of its name, and Homebrew's Chez is chez.
+run_chez() {
   pin=$1
   shift
   set -f
@@ -47,7 +48,7 @@ chez() {
   return $rc
 }
 
-chez "" -q --script /dev/stdin "$program" >&2 <<'EOF' || {
+run_chez "" -q --script /dev/stdin "$program" >&2 <<'EOF' || {
 (let ((form (call-with-input-file (cadr (command-line)) read)))
   (unless (and (pair? form) (eq? (car form) 'import))
     (display "bench-chez: the program's first datum is not an import form\n"
@@ -60,7 +61,7 @@ EOF
 }
 
 status=0
-chez "${BENCH_PIN:-}" --program "$program" "$@" >"$stdout" || status=$?
+run_chez "${BENCH_PIN:-}" --program "$program" "$@" >"$stdout" || status=$?
 if [ -s "$stdout" ]; then
   echo "bench-chez: the timed process wrote to stdout, where Chez names each library it compiles, so the run doesn't count:" >&2
   cat "$stdout" >&2

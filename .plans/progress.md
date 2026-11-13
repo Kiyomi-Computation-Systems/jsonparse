@@ -41,8 +41,8 @@ newest first.
   tag.
 - **Slice 10, the first release, is done** (close-out below). The owner chose
   on 2026-11-08 to release 0.1.0 after M1, ahead of the plan's M5
-  (ADR-0022). The tag follows the merge, and the Akku submission waits
-  for the owner.
+  (ADR-0022). `v0.1.0` was tagged on 2026-11-08, and the Akku submission
+  waits for the owner.
 - **M3 began on 2026-11-08, before M2,** as ADR-0004 orders. The owner made
   this Linux NUC the reference machine, and chose to measure jsonparse and yajl
   first, with the other comparators next (ADR-0023).
@@ -88,6 +88,13 @@ newest first.
     `escaped-string` 4.2×.
   - **The run loop, re-timed:** `gsoc-2018`'s 40% stands. The other files
     move by up to 7% either way, about what code layout alone moves.
+- **Slice 18, the 0.2.0 release, is done** (close-out below).
+  `Akku.manifest`, `CHANGELOG.md` and the Status name 0.2.0:
+  byte-machine `^0.9.0`, the number fast path and `read-json`'s docs, with
+  0.1.0's API. The owner's first `make test` on the M1 found
+  `scripts/bench-chez` broken on macOS. After the fix the second passed
+  all 40 suites. The tag follows the merge. Akku waits (ADR-0022's
+  revision).
 
 ## Next
 
@@ -173,16 +180,163 @@ newest first.
       release, and they said "start slice 17 make bench fix".
     - **The scope was mine:** retaking the report, and re-timing the run
       loop for the CHANGELOG.
-18. **The 0.2.0 release.** It tags `main`: byte-machine `^0.9.0`, slice 15's
-    number fast path, and `read-json`'s docs. It gets a GitHub tag and the
-    docs site. The owner chose on 2026-11-12 that Akku comes later, once two
-    things are true:
-    - `scripts/akku-publish` has its committed test (ADR-0022);
-    - the siblings are listed on byte-machine 0.9 (ADR-0026).
+18. **The 0.2.0 release** (done, close-out below). It tags `main`:
+    byte-machine `^0.9.0`, slice 15's number fast path, and `read-json`'s
+    docs. It gets a GitHub tag and the docs site. On 2026-11-12 the owner
+    chose "Tag now, Akku later": "Release 0.2.0 on GitHub and the docs site
+    now; write the akku-publish test, then publish to Akku once the
+    siblings are on byte-machine 0.9" (ADR-0022, ADR-0026).
 
 **Then:** M4, YAJL's options; and the rest of M5.
 
 ## Close-outs
+
+### Slice 18: the 0.2.0 release (2026-11-13)
+
+- **The choice:** the owner's, on 2026-11-12: "okay, I'd like to get
+  jsonparse onto byte-machine 0.9.0, and we can also include slice 15 and
+  the read-json docs into the next release. what else should we include?"
+  - My question back named the version, 0.2.0, and asked about Akku. They
+    chose "Tag now, Akku later": "Release 0.2.0 on GitHub and the docs site
+    now; write the akku-publish test, then publish to Akku once the
+    siblings are on byte-machine 0.9."
+  - I also asked about #22. Slice 17 fixed it first (Next 17).
+  - On 2026-11-13 they said "starts slice 18".
+  - I asked whether the version rule should also say that moving to a new
+    byte-machine 0.x means a new minor version. They said "yes update the
+    version rule, then commit push and open".
+  - **The rest of the scope was mine:** the CHANGELOG's Benchmarks entry,
+    dropping two figures from its number entry, and leaving out slice 13's
+    cut.
+- **Landed:**
+  - **0.2.0** in `Akku.manifest`, in `CHANGELOG.md`'s `## [0.2.0] -
+    2026-11-13`, and in the home page's Status.
+  - **The CHANGELOG's 0.2.0:**
+    - a lead: faster at building trees of numbers and at long runs of
+      ASCII, on byte-machine 0.9.0 at ABI 9, with 0.1.0's API, and not on
+      Akku until the libraries beside it, such as chez-http-server, accept
+      byte-machine 0.9;
+    - a Benchmarks entry. Slices 11 to 13 added `make bench` and `make
+      bench-callbacks`, and `README.org` says how to run them, but the
+      CHANGELOG had no entry;
+    - **the number entry:**
+      - it no longer gives `citm_catalog` and `records-2k` 6% to 10%. In
+        those runs `events`, which never reaches the changed code, moved
+        −5.5% to +3.7%, so the low end is layout-sized by ADR-0026's slice
+        17 revision. It says files with fewer numbers gain less, and
+        ADR-0027 has a revision note;
+      - "with no copy" was false, since the assembler still copies a
+        number's bytes. It now says no string is made in between;
+    - the run-loop entry's 7% is scoped to `events` and `tree`. `parse`
+      moved up to 8%;
+    - the `^0.9.0` entry says "another library that uses byte-machine",
+      not "parser": chez-http-server is the one still on `^0.8.0`.
+  - **`scripts/bench-chez` on macOS,** after the owner's M1 run:
+    - its shell function was named `chez`. A function hides the command of
+      its name, and on macOS the Makefile sets `CHEZ=chez`, Homebrew's
+      name, so `"$CHEZ"` called the function again with `--libdirs` as its
+      PIN. It is now `run_chez`;
+    - `test-bench-chez`'s case 12 puts a `chez` of its own first on PATH,
+      which logs each run, and runs the script with `CHEZ=chez`. Both of
+      the script's processes must start through it.
+  - **Left out of the CHANGELOG:** slice 13's context cut. Nothing a caller
+    sees changes, and its `events` gain, up to 4.5% on `ints-40k`, carries
+    the compile skew (ADR-0028) and had no control.
+  - **ADR-0022's revision:** 0.2.0's minor version comes from
+    byte-machine's range, not its ABI. Akku waits again, in the owner's
+    words, so Decision 7's step 4 is skipped. It also covers the siblings'
+    manifests, the archive's size and the M1 `make test` before the merge.
+  - **The version rule,** in the owner's words: a new minor version comes
+    with a new byte-machine runtime ABI or a move to a new byte-machine
+    0.x, such as from `^0.8.0` to `^0.9.0`. The CHANGELOG's header,
+    `Akku.manifest`'s comment, the global constraints and ADR-0022's
+    revision say so.
+  - **Stale text:**
+    - `README.org` and the CHANGELOG say that three of the eight bench
+      files are generated;
+    - `Akku.manifest`'s comment lists `bench`, as `.akkuignore` has since
+      slice 11;
+    - the global constraints say "a release to Akku".
+- **Evidence:**
+  - **`make check-release` watched fail:** with only `Akku.manifest` at
+    0.2.0, then with `CHANGELOG.md` too. It also refused a Status of
+    "v0.2.0." with nothing after the version but a period, and named the
+    line.
+  - **The API is 0.1.0's:** the same nine libraries, each with the same
+    name and export list as at `v0.1.0`, read by Chez. A copy with one name
+    changed failed the comparison. `docs/reference.md` changed only
+    `read-json`'s text.
+  - **The siblings' manifests,** on their `main`s on 2026-11-13:
+    chez-httparse 0.6.0 and chez-uri 0.9.0 declare byte-machine `^0.9.0`,
+    and chez-http-server 0.10.0 declares `^0.8.0`.
+  - **The owner's first M1 `make test`,** on `0949b2d`: 39 of 40 suites
+    passed, `string-alloc` among them. `test-bench-chez` passed 4 and
+    failed 10, each with "scripts/bench-chez: line 44: --libdirs: command
+    not found".
+  - **Case 12 watched fail on Linux** with the same line, then pass after
+    the rename. `make test` then ran 40 suites, and all passed.
+  - **The owner's second M1 `make test`,** on `d32f61b`: 40 suites, all
+    passed, `bench-chez` 15 of them. CI passed on `d32f61b` too.
+  - **The gates, on the final files:**
+    - `make test` ran 40 suites, and all passed. Its `check-release` read
+      0.2.0 in all three places;
+    - `make check-site` passed 81 and 19, and `make site` wrote 9 pages;
+    - `make check-akku` installed jsonparse 0.2.0 and byte-machine from
+      the archives. It found no design records, 9 libraries and the
+      `LICENSE`, and a consumer read and wrote JSON.
+- **Review:** an adversarial review (Opus) found:
+  - **three defects:**
+    - the lead and the Status said "faster on numbers and long strings".
+      Slice 14's review had removed "long strings", since long multibyte
+      text changes little, and numbers are faster only as trees;
+    - the records quoted the owner's choice by its label, and put the two
+      conditions for Akku on it unquoted. The option they picked did name
+      both, so it is now quoted whole;
+    - the CHANGELOG said Akku waits for "the other byte-machine parsers".
+      Both already declare `^0.9.0`; chez-http-server is the one on
+      `^0.8.0`;
+  - **six gaps:**
+    - "with no copy" in the number entry;
+    - ADR-0027 still gave the two figures the CHANGELOG dropped, with no
+      note;
+    - nothing said how the tag is made and signed;
+    - the CHANGELOG's date could part from the tag's, and no timezone was
+      named;
+    - 0.2.0's reason for a minor version is only in a revision note;
+    - the M1 run wasn't tied to slices 15's and 17's open M1 items;
+  - **eleven nits,** among them:
+    - "public test files", where three are generated;
+    - the 7% that `parse` passes;
+    - `bench` missing from `Akku.manifest`'s comment;
+    - "a release is published" in the global constraints;
+    - the archive's size;
+    - the wrong record cited for slice 13's skew;
+    - my scope unmarked in the choice;
+    - the M1 run read as after the merge;
+    - `v0.1.0`'s tag never recorded.
+
+  All are fixed but two:
+  - "Values, stops and errors are the same" is shown on Chez 10.4.1, the
+    floor CI builds on both arches, and the M1 run adds macOS;
+  - "soon with Akku" in the docs is still true.
+- **Known:**
+  - **The M1 laptop settled two open items:**
+    - slice 15's 16-to-18-digit allocation check, whose margin is 48
+      bytes: `string-alloc` passed on both runs;
+    - slice 17's `--script /dev/stdin` in `scripts/bench-chez`:
+      `test-bench-chez` passed on the second run.
+  - **The tag, after the merge, on the same day as the CHANGELOG's date:**
+    - the date is local, −0500, as `v0.1.0`'s was;
+    - if the merge slips past 2026-11-13, the date moves in the PR before
+      it merges;
+    - the tag is `git tag -s -u CC2923E50902E936049B696B9EBA259B8EAC5130
+      v0.2.0` on the squash-merge commit, annotated, then `git tag -v
+      v0.2.0`, then pushed. I make it from the NUC once the owner says so;
+    - `pages.yml` deploys the site on it.
+  - **Akku waits** for `scripts/akku-publish`'s test and the siblings on
+    byte-machine 0.9 (ADR-0022's revision).
+  - **No check holds the version rule.** `make check-release` holds one
+    version in three places, not which part of it a release moves.
 
 ### Slice 17: the bench fix (2026-11-12)
 
