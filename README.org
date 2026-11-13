@@ -3,6 +3,9 @@
 =jsonparse= is a strict JSON parser for R6RS Scheme built around a [[https://github.com/Kiyomi-Computation-Systems/byte-machine][push parser]], in the style of C’s [[https://lloyd.github.io/yajl/][YAJL]]. Instead of reading a whole document into a tree, it takes bytes in pieces of any size and calls your procedures as it reads. That lets you parse input as it arrives, or handle a huge document without building it in memory. When you do want a tree, one call gives you plain Scheme values. This makes it very
 useful for [[https://github.com/Kiyomi-Computation-Systems/circuit][servers]].
 
+=jsonparse= can read [[https://kiyomi-computation-systems.github.io/jsonparse/easy.html][whole documents or streams]], and has procedures for [[https://kiyomi-computation-systems.github.io/jsonparse/writer.html][writing
+JSON]] as well.
+
 #+begin_quote
 ✨ *AI Disclosure:* LLMs are used extensively in the planning and development of this project.
 #+end_quote
