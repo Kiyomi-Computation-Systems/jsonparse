@@ -1,11 +1,11 @@
 # ADR-0022: The first release is 0.1.0, packaged with Akku 1.2.0
 
-- **Status:** Accepted, revised on 2026-11-08 and 2026-11-13
+- **Status:** Accepted, revised on 2026-11-08 and 2026-11-13 (twice)
 - **Date:** 2026-11-08
 - **Scope:** the version and how it moves; the Akku package and what it
-  ships; Akku itself; `make check-akku`, `make check-release` and
-  `scripts/akku-publish`; `CHANGELOG.md`, `README.org` and
-  `docs/installing.md`
+  ships; Akku itself; `make check-akku`, `make check-release`,
+  `scripts/akku-publish` and `make check-akku-publish`; `CHANGELOG.md`,
+  `README.org` and `docs/installing.md`
 - **Related:** ADR-0002, ADR-0003, ADR-0008, ADR-0012, ADR-0021, ADR-0023,
   ADR-0026; the plan's M5
 
@@ -46,6 +46,44 @@
 > The archive is now 0.6 MB gzipped, 602,584 bytes against 504,349 at
 > `v0.1.0`. `bench/`, which ships too, is 48,839 of them. macOS has no CI,
 > so the owner runs `make test` on the M1 laptop before the merge.
+
+> **Revision (2026-11-13, slice 19).** Decision 8's test is `make
+> check-akku-publish`, and publishing no longer waits for the siblings.
+>
+> - **The owner's words.** After `v0.2.0` was pushed, they said "record the
+>   tag in the ledger then lets get ready to publish to akku". I listed
+>   what publishing waited for: the test, chez-httparse 0.6.0 on the index,
+>   and a chez-http-server on byte-machine `^0.9.0`. They said "we need to
+>   publish, and you publish it". I started the publish with a run that
+>   answered `n`, and they stopped it: "do the publish test". So the test
+>   comes first, and I run `scripts/akku-publish` from the NUC once it
+>   merges, not the owner as Decision 6 has it.
+> - **What follows:** chez-http-server declares byte-machine `^0.8.0`, so
+>   until it moves, no project can install it and jsonparse 0.2.0 together.
+> - **The test** runs the script, and the real Akku 1.2.0, against:
+>   - a scratch GnuPG home whose default key isn't the release key, and
+>     whose release key signs with a subkey;
+>   - a scratch repository, which git's `insteadOf` puts in place of the
+>     manifest's location;
+>   - a `curl` first on `PATH` that keeps each upload and sends nothing.
+>
+>   Its 16 checks cover a publish, a run after answering `n`, each of the
+>   script's guards, a signature by two keys, and the defaults. Each of 26
+>   mutants of the script fails it. CI's `linux` job runs it.
+> - **Two changes made it testable:**
+>   - `AKKU_PUBLISH_RELEASE_KEY` names another release key, since a test
+>     can't hold the real one. Unset, gpg is asked for the Kiyomi Computation
+>     Systems key, and the test holds that. Set to another key, the script
+>     says so;
+>   - `Akku.manifest` declares `(location (git
+>     "https://github.com/Kiyomi-Computation-Systems/jsonparse.git"))`, and
+>     the script clones that URL. Without it Akku takes the URL from `git
+>     remote get-url`, which gives the redirected one, and Akku refuses a
+>     `file://` URL. A declared location it uses as it is.
+> - **The entry is unchanged.** `v0.2.0`'s own manifest has no location, so
+>   Akku takes GitHub's URL from the clone's remote. A run on `v0.2.0` that
+>   answered `n` showed the same URL, tag and commit before and after the
+>   change.
 
 ## Context
 

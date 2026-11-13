@@ -8,8 +8,8 @@ name: CI
 #   cached), and runs `make test`, which runs check-help, check-chez,
 #   check-suites, check-versions, check-release, check-corpora,
 #   check-imports and every suite, tests/test-bench.sps included; then
-#   `make check-bench-files` and `make check-akku`. No benchmarks run
-#   (ADR-0013, ADR-0023).
+#   `make check-bench-files`, `make check-akku` and `make
+#   check-akku-publish`. No benchmarks run (ADR-0013, ADR-0023).
 # - `site`, on amd64: the docs site's checks and build, as pages.yml runs
 #   them (ADR-0021).
 #
@@ -97,13 +97,14 @@ jobs:
       # and file:// URLs in the benchmark fetch script's test; coreutils is GNU
       # timeout, which `make test` runs under, and sha256sum, which checks
       # both tarballs and the benchmark files' test downloads; xz-utils
-      # unpacks Akku's. Most are already on the image: naming them keeps the
-      # job from depending on that.
+      # unpacks Akku's; gnupg signs in the publish script's test. Most are
+      # already on the image: naming them keeps the job from depending on
+      # that.
       - name: Install toolchain
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends \
-            build-essential git curl coreutils xz-utils
+            build-essential git curl coreutils xz-utils gnupg
 
       # The OS release for the Chez cache key, read off the machine rather than
       # restated from runs-on (which a bump could forget), so a new image misses
@@ -198,6 +199,12 @@ jobs:
 
       - name: Check the Akku package
         run: make check-akku
+
+      # The publish script (ADR-0022, Decision 8), on the Akku above, with
+      # scratch keys, a scratch repository and an archive that takes
+      # nothing. Nothing is published.
+      - name: Test the Akku publish script
+        run: make check-akku-publish
 
   # The docs site (ADR-0021): the Pages workflow's build, on every pull
   # request, so a release tag's deploy does not fail first. apt's Chez and
