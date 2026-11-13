@@ -1,19 +1,51 @@
 # ADR-0022: The first release is 0.1.0, packaged with Akku 1.2.0
 
-- **Status:** Accepted, revised on 2026-11-08
+- **Status:** Accepted, revised on 2026-11-08 and 2026-11-13
 - **Date:** 2026-11-08
 - **Scope:** the version and how it moves; the Akku package and what it
   ships; Akku itself; `make check-akku`, `make check-release` and
   `scripts/akku-publish`; `CHANGELOG.md`, `README.org` and
   `docs/installing.md`
-- **Related:** ADR-0002, ADR-0003, ADR-0008, ADR-0012, ADR-0021, ADR-0023;
-  the plan's M5
+- **Related:** ADR-0002, ADR-0003, ADR-0008, ADR-0012, ADR-0021, ADR-0023,
+  ADR-0026; the plan's M5
 
 > **Revision (2026-11-08, slice 11).** `.akkuignore` lists `bench` too
 > (ADR-0023), and it matters as `site` and `grammar` do: without it the
 > benchmark harness's two libraries land on every consumer's path, and
 > `make check-akku` fails. The benchmarks ship in the archive, as the
 > suites do.
+
+> **Revision (2026-11-13, slice 18).** 0.2.0 follows Decision 7, but
+> differs from these records in two ways.
+>
+> - **Its minor version comes from byte-machine's range, not its ABI.**
+>   Decision 1 had M3's run node bump the ABI and so bring 0.2.0. The run
+>   loop came at ABI 9 instead (ADR-0026, Decisions 2 and 3). 0.2.0 declares
+>   byte-machine `^0.9.0`, which Akku reads as `>=0.9.0 <0.10.0`, so it
+>   shares no version with 0.1.0's `^0.8.0` (ADR-0026, Decision 5). Akku
+>   installs one byte-machine per project, so no project can hold 0.2.0 and
+>   a library on `^0.8.0` at once. Its API is 0.1.0's.
+>
+>   I asked the owner whether the version rule should also say that moving
+>   to a new byte-machine 0.x means a new minor version. On 2026-11-13 they
+>   said "yes update the version rule". Decision 1's rule now reads: a new
+>   minor version comes with a new byte-machine runtime ABI or a move to a
+>   new byte-machine 0.x, such as from `^0.8.0` to `^0.9.0`. The
+>   CHANGELOG's header, `Akku.manifest`'s comment and the global
+>   constraints say so.
+> - **Publishing to Akku waits again, so step 4 is skipped.** On 2026-11-12
+>   the owner chose "Tag now, Akku later": "Release 0.2.0 on GitHub and the
+>   docs site now; write the akku-publish test, then publish to Akku once
+>   the siblings are on byte-machine 0.9."
+>   - The test is Decision 8's.
+>   - Of the siblings, chez-httparse 0.6.0 and chez-uri 0.9.0 declare
+>     `^0.9.0`. chez-http-server 0.10.0 still declares `^0.8.0`, on its
+>     `main` of 2026-11-13.
+>   - Until then the docs lead with a checkout, as Decision 8 says.
+>
+> The archive is now 0.6 MB gzipped, 602,584 bytes against 504,349 at
+> `v0.1.0`. `bench/`, which ships too, is 48,839 of them. macOS has no CI,
+> so the owner runs `make test` on the M1 laptop before the merge.
 
 ## Context
 

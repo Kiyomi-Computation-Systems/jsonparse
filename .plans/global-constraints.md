@@ -321,15 +321,16 @@ record disagree, the record wins and this file gets fixed.
 ## Releases
 
 - **The version follows semantic versioning.** Before 1.0 any release may
-  change the API, and a new byte-machine runtime ABI means a new minor
-  version. `Akku.manifest`, `CHANGELOG.md`'s newest release and the home
+  change the API, and a new minor version comes with a new byte-machine
+  runtime ABI or a move to a new byte-machine 0.x, such as from `^0.8.0` to
+  `^0.9.0`. `Akku.manifest`, `CHANGELOG.md`'s newest release and the home
   page's Status name one version, and `make check-release` holds that
   (ADR-0022).
 - **Akku is 1.2.0,** pinned by sha256 in `scripts/akku-tool.lock` and run by
   `scripts/akku` (ADR-0022).
-- **A release is published with `scripts/akku-publish`,** from a fresh clone
-  at the tag, signed with the Kiyomi Computation Systems release key, and
-  checked (ADR-0022).
+- **A release to Akku is published with `scripts/akku-publish`,** from a
+  fresh clone at the tag, signed with the Kiyomi Computation Systems release
+  key, and checked (ADR-0022).
 
 ## Environment
 
