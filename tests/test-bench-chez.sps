@@ -28,7 +28,9 @@
 ;;;      when the program fails too;
 ;;;  10. a program whose first datum isn't its import form is refused;
 ;;;  11. make bench and make bench-callbacks time through the script: the
-;;;      one line each prints under make -n that names its program.
+;;;      one line each prints under make -n that names its program;
+;;;  12. CHEZ may name Chez by a bare command found on PATH, even chez, the
+;;;      name Homebrew gives it and the Makefile picks on macOS.
 ;;;
 ;;; make test runs it from the repository root with CHEZ exported. To run it
 ;;; against another copy of the script, name it after the suite:
@@ -316,6 +318,32 @@
   (let ((result (capture-command (list "make" "-n" "--no-print-directory" "bench-callbacks-inside"
                                        "BENCH_CPU="))))
     (if (= (car result) 0) (lines-naming (cadr result) "bench/callbacks.sps") result)))
+
+;; A chez of its own in DIR's bin/, first on PATH, which logs each run to
+;; DIR's ran, then runs the Chez that CHEZ names. Both of the script's
+;; processes must start through it.
+(test-equal "12. CHEZ may name Chez by a bare command, even chez, the name Homebrew gives it"
+  'through-path
+  (call-with-temp-directory
+   (lambda (dir)
+     (setup dir)
+     (let* ((found (capture-command (list "sh" "-c" "command -v \"$CHEZ\"")))
+            (real (let ((text (cadr found)))
+                    (substring text 0 (max 0 (- (string-length text) 1)))))
+            (bin (string-append dir "/bin")))
+       (capture-command (list "mkdir" "-p" bin))
+       (write-text (string-append bin "/chez")
+                   (string-append "#!/bin/sh\necho ran >>'" dir "/ran'\nexec '" real "' \"$@\"\n"))
+       (capture-command (list "chmod" "+x" (string-append bin "/chez")))
+       (let* ((result (capture-command
+                       (list "env" "-u" "BENCH_PIN" "CHEZ=chez"
+                             "sh" "-c" "PATH=\"$1:$PATH\"; export PATH; shift; exec sh \"$@\""
+                             "sh" bin script (string-append dir "/out") (libdirs dir "obj")
+                             (string-append dir "/static.sps"))))
+              (want (list (list 0 "" (string-append (compiled dir "obj" "x") "1\n"))
+                          "ran\nran\n"))
+              (got (list result (read-text (string-append dir "/ran")))))
+         (if (and (= (car found) 0) (equal? got want)) 'through-path (list found got)))))))
 
 (test-end "bench-chez")
 

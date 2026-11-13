@@ -91,8 +91,10 @@ newest first.
 - **Slice 18, the 0.2.0 release, is done** (close-out below).
   `Akku.manifest`, `CHANGELOG.md` and the Status name 0.2.0:
   byte-machine `^0.9.0`, the number fast path and `read-json`'s docs, with
-  0.1.0's API. The owner runs `make test` on the M1 before the merge, and
-  the tag follows it. Akku waits (ADR-0022's revision).
+  0.1.0's API. The owner's first `make test` on the M1 found
+  `scripts/bench-chez` broken on macOS, and it is fixed. A second M1 run
+  comes before the merge, and the tag follows it. Akku waits (ADR-0022's
+  revision).
 
 ## Next
 
@@ -229,6 +231,14 @@ newest first.
       moved up to 8%;
     - the `^0.9.0` entry says "another library that uses byte-machine",
       not "parser": chez-http-server is the one still on `^0.8.0`.
+  - **`scripts/bench-chez` on macOS,** after the owner's M1 run:
+    - its shell function was named `chez`. A function hides the command of
+      its name, and on macOS the Makefile sets `CHEZ=chez`, Homebrew's
+      name, so `"$CHEZ"` called the function again with `--libdirs` as its
+      PIN. It is now `run_chez`;
+    - `test-bench-chez`'s case 12 puts a `chez` of its own first on PATH,
+      which logs each run, and runs the script with `CHEZ=chez`. Both of
+      the script's processes must start through it.
   - **Left out of the CHANGELOG:** slice 13's context cut. Nothing a caller
     sees changes, and its `events` gain, up to 4.5% on `ints-40k`, carries
     the compile skew (ADR-0028) and had no control.
@@ -259,6 +269,12 @@ newest first.
   - **The siblings' manifests,** on their `main`s on 2026-11-13:
     chez-httparse 0.6.0 and chez-uri 0.9.0 declare byte-machine `^0.9.0`,
     and chez-http-server 0.10.0 declares `^0.8.0`.
+  - **The owner's first M1 `make test`,** on `0949b2d`: 39 of 40 suites
+    passed, `string-alloc` among them. `test-bench-chez` passed 4 and
+    failed 10, each with "scripts/bench-chez: line 44: --libdirs: command
+    not found".
+  - **Case 12 watched fail on Linux** with the same line, then pass after
+    the rename. `make test` then ran 40 suites, and all passed.
   - **The gates, on the final files:**
     - `make test` ran 40 suites, and all passed. Its `check-release` read
       0.2.0 in all three places;
@@ -302,12 +318,11 @@ newest first.
     floor CI builds on both arches, and the M1 run adds macOS;
   - "soon with Akku" in the docs is still true.
 - **Known:**
-  - **The owner runs `make test` on the M1 laptop before the merge.** It
-    also settles two open M1 items:
-    - slice 15's 16-to-18-digit allocation check, whose margin is 48
-      bytes;
-    - slice 17's `--script /dev/stdin` in `scripts/bench-chez`, which
-      `test-bench-chez` runs.
+  - **The M1 laptop, before the merge:**
+    - the first run settled slice 15's 16-to-18-digit allocation check,
+      whose margin is 48 bytes: `string-alloc` passed;
+    - a second run must pass `test-bench-chez`, which also settles slice
+      17's `--script /dev/stdin` on macOS. No run there has reached it yet.
   - **The tag, after the merge, on the same day as the CHANGELOG's date:**
     - the date is local, −0500, as `v0.1.0`'s was;
     - if the merge slips past 2026-11-13, the date moves in the PR before
