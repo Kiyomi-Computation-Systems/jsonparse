@@ -99,6 +99,11 @@ newest first.
   check-akku-publish` runs `scripts/akku-publish` and the real Akku 1.2.0
   with nothing sent. The owner asked me to publish 0.2.0, and I do once it
   merges (ADR-0022's slice 19 revision).
+- **Slice 20, publishing 0.2.0 to Akku, is done** (close-out below). I sent
+  it on 2026-11-13, and the archive listed it on 2026-11-14. `akku install
+  jsonparse` works in an empty directory, and the docs lead with it. Akku
+  can't install it beside chez-http-server 0.9.1, which declares
+  byte-machine `^0.8.0`.
 
 ## Next
 
@@ -194,19 +199,67 @@ newest first.
 19. **The publish script's test** (done, close-out below): ADR-0022
     Decision 8's, before publishing. The owner's words are in its
     close-out.
-20. **Publishing 0.2.0 to Akku.** From `main` on the NUC:
-    1. `env -u AKKU_PUBLISH_RELEASE_KEY sh scripts/akku-publish`, answering
-       `n`. The entry it shows must lock GitHub's URL, `v0.2.0` and the
-       commit `git ls-remote` gives for `v0.2.0^{}`;
-    2. the same, answering `y`. Its `.akku` must match the first run's, and
-       I read the archive's replies;
-    3. once the index lists 0.2.0, `akku install jsonparse` is checked in
-       an empty directory, the docs say to use it, and Pages runs by hand
-       from `main` (Decision 8).
+20. **Publishing 0.2.0 to Akku** (done, close-out below): by
+    `scripts/akku-publish` from `main` on the NUC, then the install check,
+    the docs and Pages (ADR-0022, Decision 8).
 
 **Then:** M4, YAJL's options; and the rest of M5.
 
 ## Close-outs
+
+### Slice 20: publishing 0.2.0 to Akku (2026-11-15)
+
+- **The choice:** the owner's.
+  - On 2026-11-13 they said "we need to publish, and you publish it"
+    (slice 19's close-out). Once slice 19 merged, they said "do the real
+    publish run".
+  - On 2026-11-15 they said "it looks like jsonparse is now published". I
+    checked it, proposed this PR and the Pages run, and asked whether the
+    CHANGELOG's fix goes in the 0.2.0 entry. They said "do it".
+  - **The rest was mine:** leading the docs with Akku, naming
+    chez-http-server in `docs/installing.md`, and correcting ADR-0026 and
+    the global constraints.
+- **Sent, on 2026-11-13,** by Next 20's runbook, from `main` at `7a40cf5`:
+  - a run that answered `n` showed the entry locked to GitHub's URL,
+    `v0.2.0` and `641c73d`, the commit `git ls-remote` gives for
+    `v0.2.0^{}`;
+  - the run that answered `y` signed at 12:43 EST with the release key
+    alone, `CC29 23E5 … 8EAC 5130`, and `gpg --verify` still says so. The
+    archive answered "Queued" for the `.key`, `.sig` and `.akku`. The
+    `.akku` sent equals the first run's.
+- **Listed:** the index rebuilt at 2026-11-14 17:03 GMT lists 0.2.0, and
+  akkuscm.org has its page. The entry is the one sent, but locked to the
+  archive's own copy, `jsonparse_0.2.0_repack.tar.xz`. Its sha256 is the
+  index's, and its files are `git archive v0.2.0`'s, byte for byte.
+- **Installed, on 2026-11-15:** in an empty directory, with Akku 1.2.0's
+  state fresh, `akku update` then `akku install jsonparse`:
+  - locked byte-machine 0.9.0, and fetched both from the archive;
+  - installed byte-machine's libraries and exactly `src/`'s, by
+    `.akku/list` against `git ls-tree v0.2.0 src/`;
+  - and after `.akku/bin/activate`, `docs/installing.md`'s first program
+    printed exactly `[1,{"a":null}]`, on the container's Chez 10.4.1.
+    Without `activate` it fails: `library (jsonparse easy) not found`.
+- **Not beside chez-http-server:** `akku install jsonparse
+  chez-http-server` in another empty directory exits 1, "No acceptable
+  solution - dependency hell".
+- **Landed:**
+  - **The docs lead with Akku.** `docs/installing.md`'s Akku section comes
+    first, and says Akku can't install 0.2.0 beside a library that still
+    needs byte-machine 0.8. The home page and `README.org` say `akku
+    install jsonparse`.
+  - **`CHANGELOG.md`'s 0.2.0** says it is the first release on Akku, in
+    place of "isn't on Akku yet", which waited for chez-http-server.
+  - **Records:** ADR-0022's and ADR-0026's slice 20 revisions; the global
+    constraints' Akku line, which still said a release waits for the
+    siblings; and the ledger's Now, Next 20 and this close-out.
+- **Evidence:** `make test` ran 40 suites and all passed, `make
+  check-site` is green, and the rendered `installing.html` leads with
+  "With Akku". No page says Akku is coming.
+- **Known:**
+  - **Pages runs by hand from `main` after the merge** (ADR-0022, Decision
+    8), with no new tag. Until then the site says Akku is coming.
+  - **chez-http-server declares byte-machine `^0.8.0`,** so no project
+    installs it and jsonparse 0.2.0 together until it moves.
 
 ### Slice 19: the publish script's test (2026-11-13)
 

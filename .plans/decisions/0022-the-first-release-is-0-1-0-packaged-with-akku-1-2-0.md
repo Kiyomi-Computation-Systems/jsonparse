@@ -1,6 +1,7 @@
 # ADR-0022: The first release is 0.1.0, packaged with Akku 1.2.0
 
-- **Status:** Accepted, revised on 2026-11-08 and 2026-11-13 (twice)
+- **Status:** Accepted, revised on 2026-11-08, 2026-11-13 (twice) and
+  2026-11-15
 - **Date:** 2026-11-08
 - **Scope:** the version and how it moves; the Akku package and what it
   ships; Akku itself; `make check-akku`, `make check-release`,
@@ -84,6 +85,24 @@
 >   Akku takes GitHub's URL from the clone's remote. A run on `v0.2.0` that
 >   answered `n` showed the same URL, tag and commit before and after the
 >   change.
+
+> **Revision (2026-11-15, slice 20).** 0.2.0 is on Akku, and Decision 8's
+> steps after publishing are done, all but the Pages run.
+>
+> - **Sent:** `scripts/akku-publish` ran from `main` at `7a40cf5` on
+>   2026-11-13. The release key alone signed, and the archive answered
+>   "Queued" for the `.key`, `.sig` and `.akku`.
+> - **Listed:** the index rebuilt on 2026-11-14 lists 0.2.0. Its entry is
+>   the one sent, but locked to the archive's own copy, whose files are
+>   `git archive v0.2.0`'s, byte for byte.
+> - **Installed:** in an empty directory, with Akku's state fresh, `akku
+>   install jsonparse` installed byte-machine 0.9.0 and exactly `src/`'s
+>   libraries. The docs' first program printed what they say it prints.
+> - **The docs lead with Akku:** `docs/installing.md`, the home page and
+>   `README.org`. `CHANGELOG.md`'s 0.2.0 says it is on Akku. Pages runs by
+>   hand from `main` once this merges.
+> - **Not beside chez-http-server:** 0.9.1 declares byte-machine `^0.8.0`,
+>   and Akku finds no solution with both. `docs/installing.md` says so.
 
 ## Context
 

@@ -10,6 +10,25 @@ runtime. There is nothing to compile.
 - The libraries import only `(rnrs)` and byte-machine's runtime, so another
   R6RS Scheme may work, but none is tested.
 
+## With Akku
+
+[Akku](https://akkuscm.org/) installs it in your project's directory:
+
+```sh
+akku install jsonparse
+. .akku/bin/activate
+scheme --program app.sps
+```
+
+- **`akku install jsonparse`** adds jsonparse to your `Akku.manifest`, making
+  one if there is none, and puts it and byte-machine under `.akku/lib`.
+- **`.akku/bin/activate`** points Chez's library path at `.akku/lib` for
+  this shell.
+
+Akku puts one byte-machine in a project. jsonparse 0.2.0 needs byte-machine
+0.9, so Akku can't install it beside a library that still needs 0.8, such
+as chez-http-server 0.9.1.
+
 ## From a checkout
 
 ```sh
@@ -35,22 +54,6 @@ export CHEZSCHEMELIBDIRS=$PWD/src:$PWD/vendor/byte-machine/src
 
 In the checkout, `make dev` starts a REPL with the libraries on the path,
 and `make run PROGRAM=app.sps` runs a program.
-
-## With Akku, soon
-
-The Akku package is ready, but not yet published. Once it is, this installs
-it in your project's directory:
-
-```sh
-akku install jsonparse
-. .akku/bin/activate
-scheme --program app.sps
-```
-
-- **`akku install jsonparse`** adds jsonparse to your `Akku.manifest`, making
-  one if there is none, and puts it and byte-machine under `.akku/lib`.
-- **`.akku/bin/activate`** points Chez's library path at `.akku/lib` for
-  this shell.
 
 ## A first program
 

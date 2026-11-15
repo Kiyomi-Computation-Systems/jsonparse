@@ -12,8 +12,15 @@ JSON]] as well.
 
 ** Installing
 
-It needs Chez Scheme 10.4.1 or later. Clone it with its submodule, and put
-two folders on the library path:
+It needs Chez Scheme 10.4.1 or later. With [[https://akkuscm.org/][Akku]], in your project's directory:
+
+#+begin_src sh
+akku install jsonparse
+. .akku/bin/activate
+scheme --program app.sps
+#+end_src
+
+Or clone it with its submodule, and put two folders on the library path:
 
 #+begin_src sh
 git clone --recursive https://github.com/Kiyomi-Computation-Systems/jsonparse.git
@@ -21,7 +28,7 @@ cd jsonparse
 scheme --libdirs src:vendor/byte-machine/src --program app.sps
 #+end_src
 
-An [[https://akkuscm.org/][Akku]] package is coming. [[file:docs/installing.md][docs/installing.md]] says more.
+[[file:docs/installing.md][docs/installing.md]] says more.
 
 ** A taste
 
