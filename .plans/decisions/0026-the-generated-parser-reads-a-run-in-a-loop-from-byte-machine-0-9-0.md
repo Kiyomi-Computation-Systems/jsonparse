@@ -57,6 +57,14 @@
 >     still stands: Vr over more turns, or a way to measure layout's
 >     part.
 
+> **Revision (2026-11-15, slice 20).** jsonparse 0.2.0 went to Akku before
+> every sibling admitted 0.9, so Decision 5's wait no longer holds. The
+> owner chose that on 2026-11-13: "we need to publish, and you publish it"
+> (ADR-0022's slice 19 revision). The archive listed 0.2.0 on 2026-11-14.
+> chez-httparse 0.6.0 and chez-uri 0.9.0 declare `^0.9.0`. chez-http-server
+> 0.9.1 still declares `^0.8.0`, and Akku finds no solution for a project
+> that asks for it and jsonparse together.
+
 ## Context
 
 **Plan M3's lever 2 was a run node:** a new node kind, so a decision record

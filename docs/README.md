@@ -21,8 +21,8 @@ v                                        ; => (("name" . "Ada") ("langs" . #("en
 ;; => (unexpected-byte 9)
 ```
 
-[Installing](installing.md) says how to get it: from a checkout now, and soon
-with Akku. In a checkout, `make dev` starts a REPL to type these lines into.
+[Installing](installing.md) says how to get it, with Akku or from a
+checkout. In a checkout, `make dev` starts a REPL to type these lines into.
 
 ## Ideas to keep in mind
 
@@ -66,7 +66,7 @@ strings. The API may change in any release before 1.0; the
 
 ## Read next
 
-- [Installing](installing.md): from a checkout, and soon with Akku.
+- [Installing](installing.md): with Akku, or from a checkout.
 - [Whole documents and streams](easy.md): read, write and look inside
   values with one import.
 - [Building values](tree.md): a builder you feed bytes as they arrive.

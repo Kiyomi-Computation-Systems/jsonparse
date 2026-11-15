@@ -49,8 +49,9 @@ record disagree, the record wins and this file gets fixed.
   ABI the same, is taken by moving the gitlink, tag, floor and lock together
   and regenerating. Every other consumer keeps working without regenerating.
   But Akku reads `^0.y.z` as `<0.(y+1).0`, so consumers share an application
-  only on one minor. A jsonparse release to Akku waits until the siblings
-  admit the same minor (ADR-0026).
+  only on one minor. jsonparse 0.2.0 went to Akku on `^0.9.0` before
+  chez-http-server admitted 0.9, by the owner's choice, so no project
+  installs both until it does (ADR-0022, ADR-0026).
 - **chez-srfi**, for SRFI-64 in tests only, is pinned at a commit, since
   upstream has no tags (ADR-0012).
 - **Only `src/`'s libraries reach a consumer's library path.** `.akkuignore`
